@@ -1,5 +1,7 @@
 const express = require('express');
 const axios = require('axios');
+const qs = require('qs');
+const cheerio = require('cheerio');
 const CryptoJS = require('crypto-js');
 const cloudscraper = require('cloudscraper');
 const https = require('https');
@@ -46,53 +48,60 @@ async function sendErrorToTelegram(error) {
   }
 }
 
-// ==================== INSTAGRAM HELPER ====================
-async function ambilWaktuServer() {
-  try {
-    const { data } = await axios.get('https://sssinstagram.com/msec', { timeout: 5000 });
-    return Math.floor(data.msec * 1000);
-  } catch {
-    return Date.now();
-  }
-}
-
-async function bikinSignature(url, secretKey, timestamp) {
-  const waktuDisesuaikan = Date.now() - (timestamp ? Date.now() - timestamp : 0);
-  const teksHash = `${url}${waktuDisesuaikan}${secretKey}`;
-  const hash = CryptoJS.SHA256(teksHash).toString(CryptoJS.enc.Hex);
-  return { signature: hash, waktuDisesuaikan, timestamp };
-}
-
-async function ambilDataInstagram(url) {
-  const secretKey = '19e08ff42f18559b51825685d917c5c9e9d89f8a5c1ab147f820f46e94c3df26';
-  const timestamp = await ambilWaktuServer();
-  const { signature, waktuDisesuaikan } = await bikinSignature(url, secretKey, timestamp);
-
-  const dataRequest = {
-    url,
-    ts: waktuDisesuaikan,
-    _ts: 1739186038417,
-    _tsc: timestamp ? Date.now() - timestamp : 0,
-    _s: signature
-  };
-
-  const headers = {
-    'Accept': 'application/json, text/plain, */*',
-    'Content-Type': 'application/json',
-    'User-Agent': 'Mozilla/5.0',
-    'Referer': 'https://sssinstagram.com/',
-    'Origin': 'https://sssinstagram.com/'
-  };
-
-  try {
-    const response = await axios.post('https://sssinstagram.com/api/convert', dataRequest, {
-      headers,
-      timeout: 10000
+// ==================== INSTAGRAM HELPER (NEW) ====================
+async function igdl(url) {
+    const data = qs.stringify({
+        'q': url,
+        't': 'media',
+        'lang': 'en'
     });
-    return response.data;
-  } catch {
-    return { error: 'Gagal ambil data', details: 'Yah error, coba lagi ya' };
-  }
+
+    const config = {
+        method: 'POST',
+        url: 'https://instanavigation.app/api/ajaxSearch',
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Android 10; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'accept-language': 'id-ID',
+            'referer': 'https://instanavigation.app/',
+            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'x-requested-with': 'XMLHttpRequest',
+            'origin': 'https://instanavigation.app',
+            'alt-used': 'instanavigation.app',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'priority': 'u=0',
+            'te': 'trailers',
+        },
+        data: data
+    };
+
+    const api = await axios.request(config);
+    const html = api.data.data;
+
+    const $ = cheerio.load(html);
+    const thumbnail = $('.download-items__thumb img').attr('src');
+
+    const downloadUrls = [];
+    $('.download-items__btn a').each((index, element) => {
+        const href = $(element).attr('href');
+        if (href) {
+            downloadUrls.push(href);
+        }
+    });
+
+    const urlParams = new URLSearchParams(downloadUrls[0]?.split('?')[1]); // Ambil filename dari URL pertama
+    let filename = urlParams.get('filename');
+    if (filename && filename.endsWith('.mp4')) {
+        filename = filename.slice(0, -4);
+    }
+
+    return {
+        title: filename || 'Title not found',
+        thumbnail: thumbnail || 'Thumbnail not found',
+        downloadUrls: downloadUrls.length > 0 ? downloadUrls : ['Download URL not found']
+    };
 }
 
 // ==================== PINTEREST HELPER ====================
@@ -233,28 +242,18 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
-// ==================== ENDPOINT INSTAGRAM ====================
+// ==================== INSTAGRAM ENDPOINT (BARU) ====================
 app.get('/instagram', async (req, res) => {
     const { url } = req.query;
     if (!url || !url.includes('instagram.com')) {
         return res.status(400).json({ status: false, error: 'URL Instagram tidak valid.' });
     }
     try {
-        const result = await ambilDataInstagram(url);
-        if (result.error) {
-            return res.status(500).json({ status: false, error: result.details || result.error });
-        }
-        const semuaMedia = Array.isArray(result) ? result : [result];
-        const output = semuaMedia.map(item => ({
-            username: item.meta?.username || null,
-            likes: item.meta?.like_count || 0,
-            comments: item.meta?.comment_count || 0,
-            caption: item.meta?.title || null,
-            type: item.url?.[0]?.ext || null,
-            download_url: item.url?.[0]?.url || null,
-            thumbnail: item.thumb || null
-        }));
-        res.json({ status: true, result: output });
+        const results = await igdl(url);
+        res.json({
+            status: true,
+            result: results
+        });
     } catch (error) {
         console.error('Instagram error:', error);
         res.status(500).json({ status: false, error: error.message });
@@ -1097,42 +1096,39 @@ async function testInstagram() {
     const status = res.status;
     const jsonStr = JSON.stringify(data, null, 2);
     if (data.status) {
-      let html = \`
+      const r = data.result;
+      let html = `
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
           <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-      \`;
-      if (data.result.length > 0) {
-        data.result.forEach((item, index) => {
-          html += \`<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">\`;
-          html += \`<p><strong>Item \${index+1}</strong></p>\`;
-          if (item.username) html += \`<p><i class="fas fa-user"></i> \${item.username}</p>\`;
-          if (item.likes) html += \`<p><i class="fas fa-heart"></i> \${item.likes} likes</p>\`;
-          if (item.comments) html += \`<p><i class="fas fa-comment"></i> \${item.comments} komentar</p>\`;
-          if (item.caption) html += \`<p><strong>Caption:</strong> \${item.caption.substring(0,100)}\${item.caption.length>100?'...':''}</p>\`;
-          if (item.thumbnail) html += \`<img src="\${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
-          if (item.download_url) {
-            html += \`<p><a href="\${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download \${item.type || 'media'}</a></p>\`;
-          }
-          html += \`</div>\`;
-        });
+      `;
+      html += `<p><strong>Judul:</strong> ${r.title}</p>`;
+      if (r.thumbnail && r.thumbnail !== 'Thumbnail not found') {
+        html += `<img src="${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
       }
-      html += \`<pre>\${jsonStr}</pre>\`;
+      if (r.downloadUrls && r.downloadUrls.length > 0) {
+        html += `<p><strong>Download URL:</strong></p><ul>`;
+        r.downloadUrls.forEach(url => {
+          html += `<li><a href="${url}" target="_blank" style="color:#00ff88;">${url}</a></li>`;
+        });
+        html += `</ul>`;
+      }
+      html += `<pre>${jsonStr}</pre>`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = \`
+      respDiv.innerHTML = `
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">\${status}</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <div class="badge error">${status}</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <pre>\${jsonStr}</pre>
-      \`;
+        <pre>${jsonStr}</pre>
+      `;
       respDiv.classList.add('error');
     }
   } catch (err) {
-    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
+    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
     respDiv.classList.add('error');
   }
 }
