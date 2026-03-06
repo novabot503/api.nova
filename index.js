@@ -20,7 +20,7 @@ const agent = new https.Agent({
   minVersion: 'TLSv1.2',
 });
 
-// Fungsi helper
+// ==================== FUNGSI HELPER ====================
 async function fetchJson(url) {
   const res = await axios.get(url);
   return res.data;
@@ -95,7 +95,7 @@ async function ambilDataInstagram(url) {
   }
 }
 
-// ==================== PINTEREST HELPER (BARU) ====================
+// ==================== PINTEREST HELPER ====================
 async function getCookies() {
   try {
     const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent: agent });
@@ -176,7 +176,7 @@ async function pinterest(query) {
   }
 }
 
-// ==================== WEBZIP ENDPOINT ====================
+// ==================== WEBZIP HELPER ====================
 async function saveweb2zip(url, options = {}) {
     if (!url) throw new Error('Url is required');
     url = url.startsWith('https://') ? url : `https://${url}`;
@@ -233,7 +233,7 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
-// ==================== INSTAGRAM ENDPOINT ====================
+// ==================== ENDPOINT INSTAGRAM ====================
 app.get('/instagram', async (req, res) => {
     const { url } = req.query;
     if (!url || !url.includes('instagram.com')) {
@@ -261,7 +261,7 @@ app.get('/instagram', async (req, res) => {
     }
 });
 
-// ==================== PINTEREST ENDPOINT ====================
+// ==================== ENDPOINT PINTEREST ====================
 app.get('/pinterest', async (req, res) => {
     const { q } = req.query;
     if (!q) {
@@ -279,7 +279,7 @@ app.get('/pinterest', async (req, res) => {
     }
 });
 
-// ==================== API ENDPOINTS ====================
+// ==================== ENDPOINT WAIFU ====================
 app.get('/waifu', async (req, res) => {
   try {
     const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
@@ -295,6 +295,7 @@ app.get('/waifu', async (req, res) => {
   }
 });
 
+// ==================== ENDPOINT NSFW ====================
 app.get('/nsfw', async (req, res) => {
   try {
     const types = ["blowjob", "neko", "trap", "waifu"];
@@ -312,6 +313,7 @@ app.get('/nsfw', async (req, res) => {
   }
 });
 
+// ==================== ENDPOINT STATUS ====================
 app.get('/api/status', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -322,7 +324,7 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ==================== WEBZIP ====================
+// ==================== ENDPOINT WEBZIP ====================
 app.get('/webzip', async (req, res) => {
     const url = req.query.url;
     if (!url) return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
@@ -350,7 +352,7 @@ app.get('/webzip', async (req, res) => {
     }
 });
 
-// ==================== TIKTOK ENDPOINT (LENGKAP) ====================
+// ==================== ENDPOINT TIKTOK ====================
 app.get('/tiktok', async (req, res) => {
     const url = req.query.url;
     if (!url || !url.includes('tiktok.com')) {
@@ -413,7 +415,7 @@ app.get('/tiktok', async (req, res) => {
     }
 });
 
-// ==================== BRAT (via API eksternal) ====================
+// ==================== ENDPOINT BRAT ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
     if (!text) {
@@ -434,7 +436,7 @@ app.get('/brat', async (req, res) => {
     }
 });
 
-// ==================== BRATVID (via API eksternal) ====================
+// ==================== ENDPOINT BRATVID ====================
 app.get('/bratvid', async (req, res) => {
     const text = req.query.text;
     if (!text) {
@@ -958,19 +960,19 @@ body {
       <div id="tiktokResponse" class="response-container"></div>
     </div>
 
-<!-- INSTAGRAM -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span><span class="url">/instagram?url=</span>
-    <button class="copy-btn" onclick="copyText('${config.URL}/instagram?url=', 'instagram')"><i class="fas fa-copy"></i> instagram</button>
-  </div>
-  <div class="api-desc">Download video/foto Instagram. Parameter ?url= (link post/reel)</div>
-  <div class="input-group">
-    <input type="text" id="instagramUrl" placeholder="https://www.instagram.com/p/xxxxx/">
-    <button class="start-btn" onclick="testInstagram()"><i class="fas fa-play"></i> Start</button>
-  </div>
-  <div id="instagramResponse" class="response-container"></div>
-</div>
+    <!-- INSTAGRAM -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/instagram?url=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/instagram?url=', 'instagram')"><i class="fas fa-copy"></i> instagram</button>
+      </div>
+      <div class="api-desc">Download video/foto Instagram. Parameter ?url= (link post/reel)</div>
+      <div class="input-group">
+        <input type="text" id="instagramUrl" placeholder="https://www.instagram.com/p/xxxxx/">
+        <button class="start-btn" onclick="testInstagram()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="instagramResponse" class="response-container"></div>
+    </div>
 
     <!-- BRAT -->
     <div class="api-endpoint">
@@ -986,19 +988,19 @@ body {
       <div id="bratResponse" class="response-container"></div>
     </div>
 
-<!-- PINTEREST -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span><span class="url">/pinterest?q=</span>
-    <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
-  </div>
-  <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
-  <div class="input-group">
-    <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
-    <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
-  </div>
-  <div id="pinterestResponse" class="response-container"></div>
-</div>
+    <!-- PINTEREST -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/pinterest?q=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
+      </div>
+      <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
+      <div class="input-group">
+        <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
+        <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="pinterestResponse" class="response-container"></div>
+    </div>
 
     <!-- BRATVID -->
     <div class="api-endpoint">
@@ -1095,42 +1097,42 @@ async function testInstagram() {
     const status = res.status;
     const jsonStr = JSON.stringify(data, null, 2);
     if (data.status) {
-      let html = `
+      let html = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
           <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-      `;
+      \`;
       if (data.result.length > 0) {
         data.result.forEach((item, index) => {
-          html += `<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">`;
-          html += `<p><strong>Item ${index+1}</strong></p>`;
-          if (item.username) html += `<p><i class="fas fa-user"></i> ${item.username}</p>`;
-          if (item.likes) html += `<p><i class="fas fa-heart"></i> ${item.likes} likes</p>`;
-          if (item.comments) html += `<p><i class="fas fa-comment"></i> ${item.comments} komentar</p>`;
-          if (item.caption) html += `<p><strong>Caption:</strong> ${item.caption.substring(0,100)}${item.caption.length>100?'...':''}</p>`;
-          if (item.thumbnail) html += `<img src="${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
+          html += \`<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">\`;
+          html += \`<p><strong>Item \${index+1}</strong></p>\`;
+          if (item.username) html += \`<p><i class="fas fa-user"></i> \${item.username}</p>\`;
+          if (item.likes) html += \`<p><i class="fas fa-heart"></i> \${item.likes} likes</p>\`;
+          if (item.comments) html += \`<p><i class="fas fa-comment"></i> \${item.comments} komentar</p>\`;
+          if (item.caption) html += \`<p><strong>Caption:</strong> \${item.caption.substring(0,100)}\${item.caption.length>100?'...':''}</p>\`;
+          if (item.thumbnail) html += \`<img src="\${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
           if (item.download_url) {
-            html += `<p><a href="${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download ${item.type || 'media'}</a></p>`;
+            html += \`<p><a href="\${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download \${item.type || 'media'}</a></p>\`;
           }
-          html += `</div>`;
+          html += \`</div>\`;
         });
       }
-      html += `<pre>${jsonStr}</pre>`;
+      html += \`<pre>\${jsonStr}</pre>\`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = `
+      respDiv.innerHTML = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">${status}</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <div class="badge error">\${status}</div>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <pre>${jsonStr}</pre>
-      `;
+        <pre>\${jsonStr}</pre>
+      \`;
       respDiv.classList.add('error');
     }
   } catch (err) {
-    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
 }
