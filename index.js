@@ -1,7 +1,6 @@
 const express = require('express');
 const axios = require('axios');
 const cloudscraper = require('cloudscraper');
-const { createCanvas } = require('canvas');
 const config = require('./setting.js');
 
 const app = express();
@@ -211,112 +210,45 @@ app.get('/tiktok', async (req, res) => {
     }
 });
 
-// ==================== BRAT TEXT GENERATOR (FIXED) ====================
+// ==================== BRAT (via API eksternal) ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
     if (!text) {
-        return res.status(400).json({ status: 400, message: 'Masukkan parameter text.' });
+        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
     }
 
     try {
-        // Log untuk debugging
-        console.log('Brat text received:', text);
+        const apiUrl = `https://api.siputzx.my.id/api/m/brat?text=${encodeURIComponent(text)}`;
+        const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
+        const buffer = Buffer.from(response.data);
 
-        // Ukuran canvas (bisa disesuaikan)
-        const width = 600;
-        const height = 400;
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-
-        // Background putih
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-
-        // Font stack yang sangat umum dan mendukung semua karakter
-        // Menggunakan font system default (sans-serif) yang pasti ada
-        const fontFamily = 'Arial, Helvetica, sans-serif';
-
-        // Margin
-        const margin = 20;
-        const maxWidth = width - margin * 2;
-        const maxHeight = height - margin * 2;
-
-        // Cari ukuran font yang pas
-        let fontSize = 120;
-        let lines = [];
-        let lineHeight = 0;
-
-        while (fontSize > 10) {
-            ctx.font = `bold ${fontSize}px ${fontFamily}`;
-            lineHeight = fontSize * 1.2;
-
-            // Reset lines
-            lines = [];
-            let line = '';
-            const words = text.split(' ');
-
-            for (let n = 0; n < words.length; n++) {
-                const testLine = line + words[n] + ' ';
-                const testWidth = ctx.measureText(testLine).width;
-                if (testWidth > maxWidth && n > 0) {
-                    lines.push(line.trim());
-                    line = words[n] + ' ';
-                } else {
-                    line = testLine;
-                }
-            }
-            lines.push(line.trim());
-
-            // Jika teks tidak mengandung spasi, treat sebagai satu kata
-            if (lines.length === 0 && text.length > 0) {
-                const textWidth = ctx.measureText(text).width;
-                if (textWidth <= maxWidth) {
-                    lines = [text];
-                } else {
-                    // Jika terlalu panjang, turunkan font
-                    fontSize -= 2;
-                    continue;
-                }
-            }
-
-            const totalHeight = lines.length * lineHeight;
-            if (totalHeight <= maxHeight) break;
-            fontSize -= 2;
-        }
-
-        // Fallback jika masih gagal (misal teks super panjang)
-        if (lines.length === 0) {
-            fontSize = 30;
-            ctx.font = `bold ${fontSize}px ${fontFamily}`;
-            lineHeight = fontSize * 1.2;
-            // Potong paksa per 20 karakter
-            const maxChars = Math.floor(maxWidth / (fontSize * 0.6));
-            for (let i = 0; i < text.length; i += maxChars) {
-                lines.push(text.substring(i, i + maxChars));
-            }
-        }
-
-        // Gambar teks hitam di tengah
-        ctx.fillStyle = '#000000';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-
-        const totalHeight = lines.length * lineHeight;
-        let y = (height - totalHeight) / 2;
-
-        for (const line of lines) {
-            ctx.fillText(line, width / 2, y);
-            y += lineHeight;
-        }
-
-        // Kirim sebagai PNG
-        const buffer = canvas.toBuffer('image/png');
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
         res.send(buffer);
-    } catch (err) {
-        console.error('Brat error:', err);
-        res.status(500).json({ status: 500, message: 'Terjadi kesalahan saat membuat gambar.', error: err.message });
+    } catch (error) {
+        console.error('Brat error:', error);
+        res.status(500).json({ status: 500, message: 'Gagal mengambil gambar brat.', error: error.message });
+    }
+});
+
+// ==================== BRATVID (via API eksternal) ====================
+app.get('/bratvid', async (req, res) => {
+    const text = req.query.text;
+    if (!text) {
+        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
+    }
+
+    try {
+        const apiUrl = `https://zelapioffciall.koyeb.app/canvas/bratvid?text=${encodeURIComponent(text)}`;
+        const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
+        const buffer = Buffer.from(response.data);
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', buffer.length);
+        res.send(buffer);
+    } catch (error) {
+        console.error('Bratvid error:', error);
+        res.status(500).json({ status: 500, message: 'Gagal mengambil gambar bratvid.', error: error.message });
     }
 });
 
@@ -623,12 +555,26 @@ body {
         <span class="method">GET</span><span class="url">/brat?text=</span>
         <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
       </div>
-      <div class="api-desc">Buat gambar teks ala brat (pure PNG). Parameter ?text=</div>
+      <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
         <input type="text" id="bratText" placeholder="Masukkan teks">
         <button class="start-btn" onclick="testBrat()"><i class="fas fa-play"></i> Start</button>
       </div>
       <div id="bratResponse" class="response-container"></div>
+    </div>
+
+    <!-- BRATVID -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/bratvid?text=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
+      </div>
+      <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
+      <div class="input-group">
+        <input type="text" id="bratvidText" placeholder="Masukkan teks">
+        <button class="start-btn" onclick="testBratvid()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="bratvidResponse" class="response-container"></div>
     </div>
   </div>
 
@@ -706,7 +652,7 @@ async function testWaifu() {
   }
 }
 
-// ==================== WEBZIP (dengan tombol copy JSON) ====================
+// ==================== WEBZIP ====================
 async function testWebzip() {
   const urlInput = document.getElementById('webzipUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL!');
@@ -733,7 +679,7 @@ async function testWebzip() {
   }
 }
 
-// ==================== TIKTOK (lengkap + tombol copy JSON) ====================
+// ==================== TIKTOK ====================
 async function testTiktok() {
   const urlInput = document.getElementById('tiktokUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL TikTok!');
@@ -780,7 +726,7 @@ async function testTiktok() {
   }
 }
 
-// ==================== BRAT (PURE CANVAS + DOWNLOAD) ====================
+// ==================== BRAT ====================
 async function testBrat() {
   const textInput = document.getElementById('bratText').value.trim();
   if (!textInput) return alert('Masukkan teks!');
@@ -796,12 +742,8 @@ async function testBrat() {
     }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    // Tambahkan tombol download
     respDiv.innerHTML = \`
-      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-        <div class="badge success">200 OK</div>
-        <button class="download-btn" onclick="downloadBratImage('\${url}')"><i class="fas fa-download"></i> Download PNG</button>
-      </div>
+      <div class="badge success">200 OK</div>
       <img src="\${url}" alt="Brat Image">
     \`;
     respDiv.classList.add('success');
@@ -812,14 +754,32 @@ async function testBrat() {
   }
 }
 
-// Fungsi untuk mendownload gambar Brat
-function downloadBratImage(imageUrl) {
-  const a = document.createElement('a');
-  a.href = imageUrl;
-  a.download = 'brat.png';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+// ==================== BRATVID ====================
+async function testBratvid() {
+  const textInput = document.getElementById('bratvidText').value.trim();
+  if (!textInput) return alert('Masukkan teks!');
+  const respDiv = document.getElementById('bratvidResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = \`${config.URL}/bratvid?text=\${encodeURIComponent(textInput)}\`;
+    const res = await fetch(apiUrl);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(\`HTTP \${res.status}: \${errText}\`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    respDiv.innerHTML = \`
+      <div class="badge success">200 OK</div>
+      <img src="\${url}" alt="Bratvid Image">
+    \`;
+    respDiv.classList.add('success');
+  } catch (err) {
+    console.error('Bratvid fetch error:', err);
+    respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
+  }
 }
 
 // ==================== COPY TEXT ====================
