@@ -147,7 +147,7 @@ app.get('/webzip', async (req, res) => {
     }
 });
 
-// ==================== TIKTOK ENDPOINT ====================
+// ==================== TIKTOK ENDPOINT (LENGKAP) ====================
 app.get('/tiktok', async (req, res) => {
     const url = req.query.url;
     if (!url || !url.includes('tiktok.com')) {
@@ -179,13 +179,33 @@ app.get('/tiktok', async (req, res) => {
             return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
         }
 
+        // Helper format angka
+        const formatNumber = (num) => {
+            if (!num) return 0;
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        };
+
+        const duration = data.duration ? Math.floor(data.duration / 60) + ':' + (data.duration % 60).toString().padStart(2, '0') : 'N/A';
+
         res.json({
             status: true,
             result: {
-                video: data.hdplay || data.play || data.wmplay ? 'https://www.tikwm.com' + (data.hdplay || data.play || data.wmplay) : null,
+                title: data.title || 'Tidak ada judul',
+                author: data.author?.nickname || 'Unknown',
+                author_username: data.author?.unique_id || '',
+                thumbnail: data.origin_cover || data.cover || '',
+                video_hd: data.hdplay ? 'https://www.tikwm.com' + data.hdplay : null,
+                video_sd: data.play ? 'https://www.tikwm.com' + data.play : null,
                 audio: data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null),
-                title: data.title,
-                author: data.author?.nickname || 'Unknown'
+                duration: duration,
+                duration_seconds: data.duration || 0,
+                play_count: formatNumber(data.play_count),
+                like_count: formatNumber(data.digg_count),
+                comment_count: formatNumber(data.comment_count),
+                share_count: formatNumber(data.share_count),
+                download_count: formatNumber(data.download_count)
             }
         });
 
@@ -370,7 +390,7 @@ body {
 /* RESPONSE CONTAINER (UNTUK GAMBAR DAN JSON) */
 .response-container {
   margin-top: 15px; padding: 12px; background: #1a1f30; border-radius: 8px;
-  border-left: 4px solid #5b8cff; display: none; max-height: 400px; overflow: auto;
+  border-left: 4px solid #5b8cff; display: none; max-height: 500px; overflow: auto;
 }
 .response-container.show { display: block; }
 .response-container.success { border-left-color: #00ff88; }
@@ -383,6 +403,7 @@ body {
 }
 .response-container pre {
   white-space: pre-wrap; font-family: 'VT323'; font-size: 12px; color: #ccc;
+  margin-top: 10px;
 }
 .badge {
   display: inline-block; padding: 2px 8px; border-radius: 30px; font-weight: bold; font-size: 11px;
@@ -390,6 +411,14 @@ body {
 }
 .badge.success { background: #00ff88; color: #000; }
 .badge.error { background: #ff3b30; color: #fff; }
+
+/* COPY JSON BUTTON */
+.copy-json-btn {
+  background: #2a3a60; color: #fff; border: none; padding: 4px 10px;
+  border-radius: 30px; font-size: 11px; cursor: pointer; margin-left: 8px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.copy-json-btn:hover { background: #3a4a70; }
 
 /* FOOTER */
 .footer {
@@ -542,7 +571,7 @@ async function testWaifu() {
   }
 }
 
-// ==================== WEBZIP ====================
+// ==================== WEBZIP (dengan tombol copy JSON) ====================
 async function testWebzip() {
   const urlInput = document.getElementById('webzipUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL!');
@@ -554,9 +583,13 @@ async function testWebzip() {
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
+    const jsonStr = JSON.stringify(data, null, 2);
     respDiv.innerHTML = \`
-      <div class="badge \${status===200?'success':'error'}">\${status}</div>
-      <pre>\${JSON.stringify(data,null,2)}</pre>
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <div class="badge \${status===200?'success':'error'}">\${status}</div>
+        <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+      </div>
+      <pre>\${jsonStr}</pre>
     \`;
     respDiv.classList.add(status===200?'success':'error');
   } catch (err) {
@@ -565,7 +598,7 @@ async function testWebzip() {
   }
 }
 
-// ==================== TIKTOK ====================
+// ==================== TIKTOK (lengkap + tombol copy JSON) ====================
 async function testTiktok() {
   const urlInput = document.getElementById('tiktokUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL TikTok!');
@@ -578,19 +611,33 @@ async function testTiktok() {
     const data = await res.json();
     const status = res.status;
     if (data.status) {
-      let html = \`<div class="badge success">200 OK</div>\`;
-      html += \`<p><strong>Judul:</strong> \${data.result.title}</p>\`;
-      html += \`<p><strong>Author:</strong> \${data.result.author}</p>\`;
-      if (data.result.video) {
-        html += \`<video src="\${data.result.video}" controls style="max-width:100%;"></video>\`;
-      }
-      if (data.result.audio) {
-        html += \`<p><strong>Audio:</strong> <a href="\${data.result.audio}" target="_blank">Download Audio</a></p>\`;
-      }
+      const r = data.result;
+      const jsonStr = JSON.stringify(data, null, 2);
+      let html = \`
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge success">200 OK</div>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+      \`;
+      html += \`<p><strong>Judul:</strong> \${r.title}</p>\`;
+      html += \`<p><strong>Author:</strong> \${r.author} (@\${r.author_username})</p>\`;
+      if (r.thumbnail) html += \`<img src="\${r.thumbnail}" style="max-width:100%; max-height:150px; border-radius:8px; margin-bottom:10px;">\`;
+      html += \`<p><strong>Durasi:</strong> \${r.duration} (detik: \${r.duration_seconds})</p>\`;
+      html += \`<p><strong>👍 Likes:</strong> \${r.like_count} • <strong>💬 Komentar:</strong> \${r.comment_count} • <strong>🔄 Dibagikan:</strong> \${r.share_count} • <strong>📥 Download:</strong> \${r.download_count}</p>\`;
+      if (r.video_hd) html += \`<video src="\${r.video_hd}" controls style="max-width:100%; margin-top:10px;"></video><p><a href="\${r.video_hd}" target="_blank">Download Video HD</a></p>\`;
+      if (r.video_sd && !r.video_hd) html += \`<video src="\${r.video_sd}" controls style="max-width:100%;"></video>\`;
+      if (r.audio) html += \`<p><strong>Audio:</strong> <a href="\${r.audio}" target="_blank">Download Audio</a></p>\`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = \`<div class="badge error">\${status}</div><pre>\${JSON.stringify(data,null,2)}</pre>\`;
+      const jsonStr = JSON.stringify(data, null, 2);
+      respDiv.innerHTML = \`
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge error">\${status}</div>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+        <pre>\${jsonStr}</pre>
+      \`;
       respDiv.classList.add('error');
     }
   } catch (err) {
@@ -601,8 +648,24 @@ async function testTiktok() {
 
 // ==================== COPY TEXT ====================
 function copyText(text, label) {
-  navigator.clipboard.writeText(text).then(()=>alert(\`Link \${label} disalin!\`));
+  // If text is encoded, decode it
+  if (label === 'json') text = decodeURIComponent(text);
+  navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
 }
+
+// Override copyText for normal link copying
+function copyTextOriginal(text, label) {
+  navigator.clipboard.writeText(text).then(() => alert(\`Link \${label} disalin!\`));
+}
+// We'll keep the original copyText for link buttons, but we already have a global copyText.
+// Rename to avoid conflict.
+window.copyText = function(text, label) {
+  if (label === 'json') text = decodeURIComponent(text);
+  navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
+};
+// For link buttons, we need a separate function. We'll keep the onclick as copyText but pass label.
+// Actually the existing copy buttons call copyText with label 'waifu', 'webzip', 'tiktok', so they are fine.
+// For JSON copy, we call copyText with label 'json', and we decode.
 
 document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('video').forEach(v=>v.play().catch(()=>{}));
