@@ -709,7 +709,10 @@ body {
         <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
-      <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
+      <!-- Tombol Start dibungkus div.input-group agar sama dengan yang lain -->
+      <div class="input-group" style="justify-content: flex-end;">
+        <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
+      </div>
       <div id="waifuResponse" class="response-container"></div>
     </div>
 
