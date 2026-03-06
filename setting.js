@@ -5,5 +5,5 @@ module.exports = {
     HOST: 'localhost',
     DEVELOPER: '@Novabot403',
     VERSI_WEB: '1.0',
-    URL: 'https://api.nova.vercel.app'
+    URL: 'https://api-novabot.vercel.app'
 };

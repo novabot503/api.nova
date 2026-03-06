@@ -10,7 +10,7 @@ app.use(require('cors')());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Fungsi helper untuk fetch JSON dan buffer
+// Fungsi helper
 async function fetchJson(url) {
   const res = await axios.get(url);
   return res.data;
@@ -21,7 +21,7 @@ async function getBuffer(url) {
   return Buffer.from(res.data);
 }
 
-// Fungsi kirim notifikasi error ke Telegram
+// Notifikasi error ke Telegram
 async function sendErrorToTelegram(error) {
   if (!config.TELEGRAM_TOKEN || !config.OWNER_ID) return;
   const message = `❌ *API Error*\n\n${error.message}\n\n${error.stack || ''}`;
@@ -36,7 +36,7 @@ async function sendErrorToTelegram(error) {
   }
 }
 
-// ==================== API ROUTES ====================
+// ==================== API ENDPOINTS ====================
 app.get('/waifu', async (req, res) => {
   try {
     const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
@@ -52,7 +52,17 @@ app.get('/waifu', async (req, res) => {
   }
 });
 
-// ==================== MAIN PAGE ====================
+app.get('/api/status', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    version: config.VERSI_WEB, 
+    developer: config.DEVELOPER,
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
+});
+
+// ==================== HALAMAN UTAMA ====================
 app.get('/', (req, res) => {
   const html = `
 <!DOCTYPE html>
@@ -111,7 +121,89 @@ body {
 }
 .header-left { display: flex; align-items: center; gap: 15px; }
 .header-title { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 1px; }
-.page-container { padding: 80px 20px 20px 20px; }
+.menu-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.menu-btn:hover { background: rgba(255,255,255,0.1); }
+.menu-btn span {
+  width: 24px;
+  height: 2px;
+  background: var(--text-main);
+  border-radius: 2px;
+  transition: 0.3s;
+}
+.menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(6px, 6px); }
+.menu-btn.active span:nth-child(2) { opacity: 0; }
+.menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(6px, -6px); }
+.page-container { padding: 80px 20px 20px 20px; transition: filter 0.3s; }
+.page-container.blur { filter: blur(4px); pointer-events: none; }
+
+/* STATUS PANEL */
+.status-panel {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--primary);
+  border-radius: 20px;
+  padding: 20px;
+  z-index: 999;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+  transform: translateX(120%);
+  transition: transform 0.3s ease;
+}
+.status-panel.show { transform: translateX(0); }
+.status-panel h3 {
+  font-family: 'Orbitron';
+  color: var(--primary);
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.status-item {
+  background: rgba(0,0,0,0.3);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--primary);
+}
+.status-item .label { color: var(--text-sub); font-size: 12px; }
+.status-item .value { color: var(--text-main); font-size: 16px; font-weight: bold; }
+.wave-container {
+  width: 100%;
+  height: 60px;
+  margin: 15px 0;
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.2);
+}
+.wave {
+  position: absolute;
+  width: 200%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 20px,
+    rgba(58, 109, 240, 0.2) 20px,
+    rgba(58, 109, 240, 0.2) 40px
+  );
+  animation: wave 8s linear infinite;
+}
+@keyframes wave { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+
 .lux-header-card {
   background: linear-gradient(135deg, #1e3c72, #2a5298);
   border-radius: 20px;
@@ -175,9 +267,64 @@ body {
   margin-bottom: 10px;
   border-left: 4px solid var(--primary);
 }
-.api-endpoint .method { color: var(--accent-gold); font-weight: bold; }
-.api-endpoint .url { color: #00ff88; word-break: break-all; }
-.api-endpoint .desc { color: var(--text-sub); font-size: 14px; margin-top: 5px; }
+.api-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.api-header .method { color: var(--accent-gold); font-weight: bold; }
+.api-header .url { color: #00ff88; word-break: break-all; flex: 1; }
+.copy-btn {
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  padding: 4px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: 0.2s;
+}
+.copy-btn:hover { background: var(--primary); color: #000; }
+.api-desc { color: var(--text-sub); font-size: 14px; margin-bottom: 10px; }
+.test-btn {
+  background: var(--primary);
+  color: #000;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-right: 10px;
+}
+.test-result {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 5px;
+  max-height: 200px;
+  overflow: auto;
+}
+.test-result.success { border-left: 4px solid #00ff88; }
+.test-result.error { border-left: 4px solid var(--accent-red); }
+.test-result .status-code {
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.status-code .badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+.badge.success { background: #00ff88; color: #000; }
+.badge.error { background: var(--accent-red); color: #fff; }
+.test-result img { max-width: 100%; max-height: 150px; border-radius: 5px; }
 
 .footer {
   text-align: center;
@@ -194,10 +341,18 @@ body {
   <div class="header-left">
     <div class="header-title">NOVABOT API</div>
   </div>
-  <div style="color: var(--text-sub); font-size: 12px;"><i class="fas fa-robot"></i> WhatsApp Bot</div>
+  <div class="menu-btn" id="menuBtn">
+    <span></span><span></span><span></span>
+  </div>
 </div>
 
-<div class="page-container">
+<div class="status-panel" id="statusPanel">
+  <h3><i class="fas fa-chart-line"></i> SERVER STATUS</h3>
+  <div class="wave-container"><div class="wave"></div></div>
+  <div id="statusContent">Memuat...</div>
+</div>
+
+<div class="page-container" id="pageContainer">
   <div class="lux-header-card">
     <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
       <div class="lux-icon-box"><i class="fas fa-robot"></i></div>
@@ -234,15 +389,18 @@ body {
   <div class="lux-section-title">API Endpoints</div>
   <div class="api-card">
     <h3><i class="fas fa-code"></i> Tersedia:</h3>
+    
+    <!-- WAIFU ENDPOINT -->
     <div class="api-endpoint">
-      <span class="method">GET</span> <span class="url">/waifu</span>
-      <div class="desc">Mengembalikan gambar waifu random (format PNG)</div>
+      <div class="api-header">
+        <span class="method">GET</span>
+        <span class="url">/waifu</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
+      </div>
+      <div class="api-desc">Mengembalikan gambar waifu random (format PNG)</div>
+      <button class="test-btn" onclick="testEndpoint('${config.URL}/waifu', 'waifuResult')">🔄 Coba</button>
+      <div id="waifuResult" class="test-result"></div>
     </div>
-    <div class="api-endpoint">
-      <span class="method">GET</span> <span class="url">/api/status</span>
-      <div class="desc">Cek status server</div>
-    </div>
-    <p style="color: var(--text-sub); margin-top: 15px;">Endpoint lain akan segera hadir.</p>
   </div>
 
   <div class="footer">
@@ -255,6 +413,60 @@ body {
 </div>
 
 <script>
+// ==================== STATUS PANEL ====================
+const menuBtn = document.getElementById('menuBtn');
+const statusPanel = document.getElementById('statusPanel');
+const pageContainer = document.getElementById('pageContainer');
+const statusContent = document.getElementById('statusContent');
+
+menuBtn.addEventListener('click', () => {
+  menuBtn.classList.toggle('active');
+  statusPanel.classList.toggle('show');
+  pageContainer.classList.toggle('blur');
+});
+
+async function loadStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    const uptime = formatUptime(data.uptime);
+    statusContent.innerHTML = \`
+      <div class="status-item">
+        <div class="label">STATUS</div>
+        <div class="value" style="color: #00ff88;">🟢 ONLINE</div>
+      </div>
+      <div class="status-item">
+        <div class="label">VERSION</div>
+        <div class="value">\${data.version}</div>
+      </div>
+      <div class="status-item">
+        <div class="label">DEVELOPER</div>
+        <div class="value">\${data.developer}</div>
+      </div>
+      <div class="status-item">
+        <div class="label">UPTIME</div>
+        <div class="value">\${uptime}</div>
+      </div>
+      <div class="status-item">
+        <div class="label">TIMESTAMP</div>
+        <div class="value">\${new Date(data.timestamp).toLocaleString('id-ID')}</div>
+      </div>
+    \`;
+  } catch (err) {
+    statusContent.innerHTML = '<div class="status-item" style="color: var(--accent-red);">❌ Gagal memuat status</div>';
+  }
+}
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return \`\${d}d \${h}h \${m}m \${s}s\`;
+}
+loadStatus();
+setInterval(loadStatus, 30000);
+
 // ==================== SLIDER ====================
 let currentSlide = 0;
 let slideInterval;
@@ -277,6 +489,49 @@ function setupSlider() {
   sliderContainer.addEventListener('mouseleave', () => { if (isSwiping) { isSwiping = false; sliderContainer.style.cursor = 'grab'; updateSlider(); startSlider(); } });
 }
 
+// ==================== TEST ENDPOINT ====================
+async function testEndpoint(url, resultId) {
+  const resultDiv = document.getElementById(resultId);
+  resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  resultDiv.className = 'test-result';
+  
+  try {
+    const res = await fetch(url);
+    const status = res.status;
+    const statusText = res.statusText;
+    
+    if (url.includes('waifu')) {
+      // Untuk gambar
+      const blob = await res.blob();
+      const objectURL = URL.createObjectURL(blob);
+      resultDiv.innerHTML = \`
+        <div class="status-code"><span class="badge \${status === 200 ? 'success' : 'error'}">\${status} \${statusText}</span></div>
+        <img src="\${objectURL}" alt="Waifu Image">
+      \`;
+    } else {
+      const text = await res.text();
+      resultDiv.innerHTML = \`
+        <div class="status-code"><span class="badge \${status === 200 ? 'success' : 'error'}">\${status} \${statusText}</span></div>
+        <pre>\${text}</pre>
+      \`;
+    }
+    resultDiv.classList.add(status === 200 ? 'success' : 'error');
+  } catch (err) {
+    resultDiv.innerHTML = \`
+      <div class="status-code"><span class="badge error">Network Error</span></div>
+      <pre>\${err.message}</pre>
+    \`;
+    resultDiv.classList.add('error');
+  }
+}
+
+// ==================== COPY TEXT ====================
+function copyText(text, label) {
+  navigator.clipboard.writeText(text).then(() => {
+    alert(\`Link \${label} disalin!\`);
+  });
+}
+
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', () => {
   setupSlider();
@@ -293,11 +548,6 @@ document.addEventListener('keydown', e => {
 </html>
   `;
   res.send(html);
-});
-
-// ==================== STATUS ENDPOINT ====================
-app.get('/api/status', (req, res) => {
-  res.json({ status: 'ok', version: config.VERSI_WEB, developer: config.DEVELOPER });
 });
 
 // ==================== START SERVER ====================
