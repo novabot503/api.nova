@@ -325,35 +325,47 @@ body {
   text-align: center;
 }
 
-/* WAVE CONTAINER */
+/* METRIC CARDS */
 .metric-row {
   margin-bottom: 20px;
+  background: #0b0e18;
+  border-radius: 12px;
+  padding: 15px;
+  border: 1px solid #1f2a40;
 }
 .metric-header {
   display: flex;
   justify-content: space-between;
   color: #8a9bb0;
   font-size: 16px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 .wave-container {
   position: relative;
   width: 100%;
   height: 60px;
-  background: #0b0e18;
+  background: #000;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #1f2a40;
 }
-.wave-group {
+.wave-svg {
   position: absolute;
-  width: 100%;
+  width: 200%;
   height: 100%;
-  background-size: 200% 100%;
-  animation: waveMove 8s linear infinite;
-  opacity: 0.25;
+  animation: waveMove 6s linear infinite;
 }
-@keyframes waveMove { 0% { background-position: 0 0; } 100% { background-position: 200% 0; } }
+.wave-svg:nth-child(2) {
+  animation-duration: 8s;
+  opacity: 0.6;
+}
+.wave-svg:nth-child(3) {
+  animation-duration: 10s;
+  opacity: 0.4;
+}
+@keyframes waveMove {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
 
 .status-grid {
   display: grid;
@@ -524,9 +536,15 @@ body {
       <span id="cpuValue">0.0%</span>
     </div>
     <div class="wave-container">
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 20%, #3a6df0 20%, #3a6df0 40%, transparent 40%, transparent 60%, #5b8cff 60%, #5b8cff 80%, transparent 80%); animation-duration: 8s;"></div>
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 30%, #00ff88 30%, #00ff88 50%, transparent 50%, transparent 70%, #3a6df0 70%, #3a6df0 90%, transparent 90%); animation-duration: 12s; animation-direction: reverse;"></div>
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 10%, #ffcc00 10%, #ffcc00 25%, transparent 25%, transparent 40%, #5b8cff 40%, #5b8cff 55%, transparent 55%); animation-duration: 6s;"></div>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,30 Q150,0 300,30 T600,30 T900,30 T1200,30 L1200,60 L0,60 Z" fill="#3a6df0" opacity="0.3"/>
+      </svg>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,35 Q150,10 300,35 T600,35 T900,35 T1200,35 L1200,60 L0,60 Z" fill="#00ff88" opacity="0.3"/>
+      </svg>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,25 Q150,40 300,25 T600,25 T900,25 T1200,25 L1200,60 L0,60 Z" fill="#ffcc00" opacity="0.3"/>
+      </svg>
     </div>
   </div>
 
@@ -537,9 +555,15 @@ body {
       <span id="memValue">0 MiB</span>
     </div>
     <div class="wave-container">
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 20%, #f97316 20%, #f97316 40%, transparent 40%, transparent 60%, #fb923c 60%, #fb923c 80%, transparent 80%); animation-duration: 7s;"></div>
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 30%, #22c55e 30%, #22c55e 50%, transparent 50%, transparent 70%, #4ade80 70%, #4ade80 90%, transparent 90%); animation-duration: 11s; animation-direction: reverse;"></div>
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 10%, #eab308 10%, #eab308 25%, transparent 25%, transparent 40%, #facc15 40%, #facc15 55%, transparent 55%); animation-duration: 5s;"></div>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,30 Q150,0 300,30 T600,30 T900,30 T1200,30 L1200,60 L0,60 Z" fill="#f97316" opacity="0.3"/>
+      </svg>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,35 Q150,10 300,35 T600,35 T900,35 T1200,35 L1200,60 L0,60 Z" fill="#22c55e" opacity="0.3"/>
+      </svg>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,25 Q150,40 300,25 T600,25 T900,25 T1200,25 L1200,60 L0,60 Z" fill="#eab308" opacity="0.3"/>
+      </svg>
     </div>
   </div>
 
@@ -550,9 +574,15 @@ body {
       <span id="netValue">0 B/s</span>
     </div>
     <div class="wave-container">
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 20%, #a855f7 20%, #a855f7 40%, transparent 40%, transparent 60%, #c084fc 60%, #c084fc 80%, transparent 80%); animation-duration: 9s;"></div>
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 30%, #ec4899 30%, #ec4899 50%, transparent 50%, transparent 70%, #f472b6 70%, #f472b6 90%, transparent 90%); animation-duration: 13s; animation-direction: reverse;"></div>
-      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 10%, #06b6d4 10%, #06b6d4 25%, transparent 25%, transparent 40%, #22d3ee 40%, #22d3ee 55%, transparent 55%); animation-duration: 7s;"></div>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,30 Q150,0 300,30 T600,30 T900,30 T1200,30 L1200,60 L0,60 Z" fill="#a855f7" opacity="0.3"/>
+      </svg>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,35 Q150,10 300,35 T600,35 T900,35 T1200,35 L1200,60 L0,60 Z" fill="#ec4899" opacity="0.3"/>
+      </svg>
+      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,25 Q150,40 300,25 T600,25 T900,25 T1200,25 L1200,60 L0,60 Z" fill="#06b6d4" opacity="0.3"/>
+      </svg>
     </div>
   </div>
 
