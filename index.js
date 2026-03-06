@@ -147,7 +147,7 @@ app.get('/webzip', async (req, res) => {
     }
 });
 
-// ==================== TIKTOK ENDPOINT (SEDERHANA) ====================
+// ==================== TIKTOK ENDPOINT (LENGKAP) ====================
 app.get('/tiktok', async (req, res) => {
     const url = req.query.url;
     if (!url || !url.includes('tiktok.com')) {
@@ -170,7 +170,7 @@ app.get('/tiktok', async (req, res) => {
                 count: 12,
                 cursor: 0,
                 web: 1,
-                hd: 0 // nonaktifkan HD
+                hd: 1
             }
         });
 
@@ -179,17 +179,33 @@ app.get('/tiktok', async (req, res) => {
             return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
         }
 
-        // Gunakan video tanpa watermark (play) sebagai default
-        const videoUrl = data.play ? 'https://www.tikwm.com' + data.play : null;
-        const audioUrl = data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null);
+        // Format angka (K/M)
+        const formatNumber = (num) => {
+            if (!num) return 0;
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        };
+
+        // Durasi dalam format mm:ss
+        const duration = data.duration ? Math.floor(data.duration / 60) + ':' + (data.duration % 60).toString().padStart(2, '0') : 'N/A';
 
         res.json({
             status: true,
             result: {
-                video: videoUrl,
-                audio: audioUrl,
+                video: data.play ? 'https://www.tikwm.com' + data.play : null,
+                audio: data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null),
                 title: data.title || 'Tidak ada judul',
-                author: data.author?.nickname || 'Unknown'
+                author: data.author?.nickname || 'Unknown',
+                author_username: data.author?.unique_id || '',
+                thumbnail: data.origin_cover || data.cover || '',
+                duration: duration,
+                duration_seconds: data.duration || 0,
+                play_count: formatNumber(data.play_count),
+                like_count: formatNumber(data.digg_count),
+                comment_count: formatNumber(data.comment_count),
+                share_count: formatNumber(data.share_count),
+                download_count: formatNumber(data.download_count)
             }
         });
 
@@ -206,7 +222,7 @@ app.get('/', (req, res) => {
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=0.55" />
 <title>NovaBot API</title>
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
@@ -582,7 +598,7 @@ async function testWebzip() {
   }
 }
 
-// ==================== TIKTOK (sederhana + tombol copy JSON) ====================
+// ==================== TIKTOK (lengkap + tombol copy JSON) ====================
 async function testTiktok() {
   const urlInput = document.getElementById('tiktokUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL TikTok!');
@@ -604,8 +620,11 @@ async function testTiktok() {
         </div>
       \`;
       html += \`<p><strong>Judul:</strong> \${r.title}</p>\`;
-      html += \`<p><strong>Author:</strong> \${r.author}</p>\`;
-      if (r.video) html += \`<video src="\${r.video}" controls style="max-width:100%;"></video>\`;
+      html += \`<p><strong>Author:</strong> \${r.author} (@\${r.author_username})</p>\`;
+      if (r.thumbnail) html += \`<img src="\${r.thumbnail}" style="max-width:100%; max-height:150px; border-radius:8px; margin-bottom:10px;">\`;
+      html += \`<p><strong>Durasi:</strong> \${r.duration} (\${r.duration_seconds} detik)</p>\`;
+      html += \`<p><strong>👍 Likes:</strong> \${r.like_count} • <strong>💬 Komentar:</strong> \${r.comment_count} • <strong>🔄 Dibagikan:</strong> \${r.share_count} • <strong>📥 Download:</strong> \${r.download_count}</p>\`;
+      if (r.video) html += \`<video src="\${r.video}" controls style="max-width:100%; margin-top:10px;"></video>\`;
       if (r.audio) html += \`<p><strong>Audio:</strong> <a href="\${r.audio}" target="_blank">Download Audio</a></p>\`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
