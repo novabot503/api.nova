@@ -49,11 +49,9 @@ async function sendErrorToTelegram(error) {
 // ==================== INSTAGRAM HELPER ====================
 async function ambilWaktuServer() {
   try {
-    // Coba ambil dari server, tapi karena udah mati, kita kasih fallback
     const { data } = await axios.get('https://sssinstagram.com/msec', { timeout: 5000 });
     return Math.floor(data.msec * 1000);
   } catch (error) {
-    // Fallback: pake waktu lokal server aja
     console.log('Gagal ambil waktu server, pake fallback Date.now()');
     return Date.now();
   }
@@ -92,10 +90,7 @@ async function ambilDataInstagram(url) {
       headers,
       timeout: 10000
     });
-    
-    // LOG INI PENTING: buat lihat bentuk respons asli dari API
     console.log('Response from sssinstagram:', JSON.stringify(response.data, null, 2));
-    
     return response.data;
   } catch (error) {
     console.error('Error detail from sssinstagram:', error.message);
@@ -241,6 +236,19 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
+// ==================== TELEGRAM HELPER (PAKAI COOKIE, MIRIP TIKTOK) ====================
+// Menggunakan API eksternal yang stabil (akuari.my.id) sebagai pengganti cookie manual
+async function ambilDataTelegram(url) {
+    const apiUrl = `https://api.akuari.my.id/downloader/telegram?url=${encodeURIComponent(url)}`;
+    try {
+        const response = await axios.get(apiUrl, { timeout: 15000 });
+        return response.data;
+    } catch (error) {
+        console.error('Telegram API error:', error.message);
+        return { status: false, error: 'Gagal mengambil data dari Telegram' };
+    }
+}
+
 // ==================== ENDPOINT INSTAGRAM ====================
 app.get('/instagram', async (req, res) => {
     const { url } = req.query;
@@ -249,22 +257,9 @@ app.get('/instagram', async (req, res) => {
     }
     try {
         const result = await ambilDataInstagram(url);
-        
-        // Log hasil dari helper
-        console.log('Result from ambilDataInstagram:', result);
-
-        // Cek apakah ada error
         if (result.error) {
-            return res.status(500).json({ 
-                status: false, 
-                error: result.details || result.error,
-                // Kita kirim juga data mentahnya buat debugging (opsional)
-                raw: result 
-            });
+            return res.status(500).json({ status: false, error: result.details || result.error, raw: result });
         }
-
-        // Coba deteksi struktur respons. 
-        // Kalau result punya property 'meta' atau 'url', berarti formatnya array of objects
         if (Array.isArray(result)) {
             const output = result.map(item => ({
                 username: item.meta?.username || null,
@@ -276,10 +271,7 @@ app.get('/instagram', async (req, res) => {
                 thumbnail: item.thumb || null
             }));
             return res.json({ status: true, result: output });
-        } 
-        // Kalau result langsung object dengan data yang diinginkan
-        else if (result.data) {
-            // Asumsi struktur: { data: [...] }
+        } else if (result.data) {
             const data = Array.isArray(result.data) ? result.data : [result.data];
             const output = data.map(item => ({
                 username: item.username || item.meta?.username || null,
@@ -291,18 +283,34 @@ app.get('/instagram', async (req, res) => {
                 thumbnail: item.thumbnail || item.thumb || null
             }));
             return res.json({ status: true, result: output });
+        } else {
+            return res.json({ status: true, message: 'Format data tidak dikenal', raw: result });
         }
-        // Kalau nggak ketemu format, kirim balik data mentahnya
-        else {
-            return res.json({ 
-                status: true, 
-                message: 'Format data tidak dikenal, berikut data mentahnya:', 
-                raw: result 
-            });
-        }
-
     } catch (error) {
         console.error('Instagram error:', error);
+        await sendErrorToTelegram(error);
+        res.status(500).json({ status: false, error: error.message });
+    }
+});
+
+// ==================== ENDPOINT TELEGRAM ====================
+app.get('/telegram', async (req, res) => {
+    const { url } = req.query;
+    if (!url || !url.includes('t.me')) {
+        return res.status(400).json({ status: false, error: 'URL Telegram tidak valid.' });
+    }
+    try {
+        const result = await ambilDataTelegram(url);
+        if (!result.status) {
+            return res.status(500).json({ status: false, error: result.error || 'Gagal mengambil data' });
+        }
+        res.json({
+            status: true,
+            result: result.data || result.result
+        });
+    } catch (error) {
+        console.error('Telegram error:', error);
+        await sendErrorToTelegram(error);
         res.status(500).json({ status: false, error: error.message });
     }
 });
@@ -315,13 +323,11 @@ app.get('/pinterest', async (req, res) => {
     }
     try {
         const results = await pinterest(q);
-        res.json({
-            status: true,
-            result: results
-        });
+        res.json({ status: true, result: results });
     } catch (error) {
         console.error('Pinterest error:', error);
-        res.status(500).json({ status: false, error: error.message, stack: error.stack });
+        await sendErrorToTelegram(error);
+        res.status(500).json({ status: false, error: error.message });
     }
 });
 
@@ -330,10 +336,7 @@ app.get('/waifu', async (req, res) => {
   try {
     const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
     const buffer = await getBuffer(data.url);
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': buffer.length,
-    });
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buffer.length });
     res.end(buffer);
   } catch (error) {
     await sendErrorToTelegram(error);
@@ -348,10 +351,7 @@ app.get('/nsfw', async (req, res) => {
     const randomType = types[Math.floor(Math.random() * types.length)];
     const data = await fetchJson(`https://api.waifu.pics/nsfw/${randomType}`);
     const buffer = await getBuffer(data.url);
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': buffer.length,
-    });
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buffer.length });
     res.end(buffer);
   } catch (error) {
     await sendErrorToTelegram(error);
@@ -377,21 +377,15 @@ app.get('/webzip', async (req, res) => {
 
     try {
         const result = await saveweb2zip(url, { renameAssets: true });
-
         if (result.error?.code) {
-            return res.status(500).json({
-                status: false,
-                error: result.error.text || 'Gagal menyimpan website.'
-            });
+            return res.status(500).json({ status: false, error: result.error.text || 'Gagal menyimpan website.' });
         }
-
         return res.json({
             status: true,
             originalUrl: result.url,
             copiedFilesAmount: result.copiedFilesAmount,
             downloadUrl: result.downloadUrl
         });
-
     } catch (e) {
         await sendErrorToTelegram(e);
         return res.status(500).json({ status: false, error: e.message });
@@ -404,7 +398,6 @@ app.get('/tiktok', async (req, res) => {
     if (!url || !url.includes('tiktok.com')) {
         return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
     }
-
     try {
         const response = await axios.post('https://www.tikwm.com/api/', {}, {
             headers: {
@@ -416,19 +409,12 @@ app.get('/tiktok', async (req, res) => {
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            params: {
-                url: url,
-                count: 12,
-                cursor: 0,
-                web: 1,
-                hd: 1
-            }
+            params: { url, count: 12, cursor: 0, web: 1, hd: 1 }
         });
 
         const data = response.data.data;
-        if (!data) {
-            return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
-        }
+        if (!data) return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
+
         const formatNumber = (num) => {
             if (!num) return 0;
             if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -454,9 +440,9 @@ app.get('/tiktok', async (req, res) => {
                 download_count: formatNumber(data.download_count)
             }
         });
-
     } catch (error) {
         console.error('TikTok error:', error);
+        await sendErrorToTelegram(error);
         res.status(500).json({ status: false, error: 'Gagal memproses permintaan.' });
     }
 });
@@ -464,20 +450,18 @@ app.get('/tiktok', async (req, res) => {
 // ==================== ENDPOINT BRAT ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
-    if (!text) {
-        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
-    }
+    if (!text) return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
 
     try {
         const apiUrl = `https://api.siputzx.my.id/api/m/brat?text=${encodeURIComponent(text)}`;
         const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(response.data);
-
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
         res.send(buffer);
     } catch (error) {
         console.error('Brat error:', error);
+        await sendErrorToTelegram(error);
         res.status(500).json({ status: 500, message: 'Gagal mengambil gambar brat.', error: error.message });
     }
 });
@@ -485,20 +469,18 @@ app.get('/brat', async (req, res) => {
 // ==================== ENDPOINT BRATVID ====================
 app.get('/bratvid', async (req, res) => {
     const text = req.query.text;
-    if (!text) {
-        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
-    }
+    if (!text) return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
 
     try {
         const apiUrl = `https://zelapioffciall.koyeb.app/canvas/bratvid?text=${encodeURIComponent(text)}`;
         const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(response.data);
-
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
         res.send(buffer);
     } catch (error) {
         console.error('Bratvid error:', error);
+        await sendErrorToTelegram(error);
         res.status(500).json({ status: 500, message: 'Gagal mengambil gambar bratvid.', error: error.message });
     }
 });
@@ -1020,6 +1002,20 @@ body {
       <div id="instagramResponse" class="response-container"></div>
     </div>
 
+    <!-- TELEGRAM -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/telegram?url=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/telegram?url=', 'telegram')"><i class="fas fa-copy"></i> telegram</button>
+      </div>
+      <div class="api-desc">Download video/file dari Telegram. Parameter ?url= (link publik)</div>
+      <div class="input-group">
+        <input type="text" id="telegramUrl" placeholder="https://t.me/username/123">
+        <button class="start-btn" onclick="testTelegram()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="telegramResponse" class="response-container"></div>
+    </div>
+
     <!-- BRAT -->
     <div class="api-endpoint">
       <div class="api-header">
@@ -1150,8 +1146,6 @@ async function testInstagram() {
           <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
       `;
-
-      // Cek apakah ada properti 'result' yang berisi array
       if (data.result && Array.isArray(data.result) && data.result.length > 0) {
         data.result.forEach((item, index) => {
           html += `<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">`;
@@ -1166,16 +1160,60 @@ async function testInstagram() {
           }
           html += `</div>`;
         });
-      } 
-      // Kalau ada properti 'raw' (dari debugging), tampilkan itu
-      else if (data.raw) {
+      } else if (data.raw) {
         html += `<p><strong>Data mentah dari API:</strong></p><pre>${JSON.stringify(data.raw, null, 2)}</pre>`;
-      }
-      // Kalau nggak ada result, tampilkan JSON aja
-      else {
+      } else {
         html += `<pre>${jsonStr}</pre>`;
       }
+      respDiv.innerHTML = html;
+      respDiv.classList.add('success');
+    } else {
+      respDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge error">${status}</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+        <pre>${jsonStr}</pre>
+      `;
+      respDiv.classList.add('error');
+    }
+  } catch (err) {
+    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.classList.add('error');
+  }
+}
 
+// ==================== TELEGRAM ====================
+async function testTelegram() {
+  const urlInput = document.getElementById('telegramUrl').value.trim();
+  if (!urlInput) return alert('Masukkan URL Telegram!');
+  const respDiv = document.getElementById('telegramResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = '${config.URL}' + '/telegram?url=' + encodeURIComponent(urlInput);
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    const status = res.status;
+    const jsonStr = JSON.stringify(data, null, 2);
+    if (data.status) {
+      let html = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge success">200 OK</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+      `;
+      const r = data.result;
+      if (r) {
+        if (r.title) html += `<p><strong>Judul:</strong> ${r.title}</p>`;
+        if (r.author) html += `<p><strong>Author:</strong> ${r.author}</p>`;
+        if (r.thumbnail) html += `<img src="${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
+        if (r.download_url || r.videoUrl) {
+          const dl = r.download_url || r.videoUrl;
+          html += `<p><a href="${dl}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download</a></p>`;
+        }
+      }
+      html += `<pre>${jsonStr}</pre>`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
