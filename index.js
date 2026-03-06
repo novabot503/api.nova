@@ -53,6 +53,23 @@ app.get('/waifu', async (req, res) => {
   }
 });
 
+app.get('/nsfw', async (req, res) => {
+  try {
+    const types = ["blowjob", "neko", "trap", "waifu"];
+    const randomType = types[Math.floor(Math.random() * types.length)];
+    const data = await fetchJson(`https://api.waifu.pics/nsfw/${randomType}`);
+    const buffer = await getBuffer(data.url);
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  } catch (error) {
+    await sendErrorToTelegram(error);
+    res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
 app.get('/api/status', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -709,11 +726,23 @@ body {
         <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
-      <!-- Tombol Start dibungkus div.input-group agar sama dengan yang lain -->
       <div class="input-group" style="justify-content: flex-end;">
         <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
       </div>
       <div id="waifuResponse" class="response-container"></div>
+    </div>
+
+    <!-- NSFW -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/nsfw</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
+      </div>
+      <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
+      <div class="input-group" style="justify-content: flex-end;">
+        <button class="start-btn" onclick="testNsfw()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="nsfwResponse" class="response-container"></div>
     </div>
 
     <!-- WEBZIP -->
@@ -851,6 +880,26 @@ async function testWaifu() {
     respDiv.innerHTML = \`
       <div class="badge success">200 OK</div>
       <img src="\${url}" alt="Waifu Image">
+    \`;
+    respDiv.classList.add('success');
+  } catch (err) {
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
+  }
+}
+
+// ==================== NSFW ====================
+async function testNsfw() {
+  const respDiv = document.getElementById('nsfwResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const res = await fetch('${config.URL}/nsfw');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    respDiv.innerHTML = \`
+      <div class="badge success">200 OK</div>
+      <img src="\${url}" alt="NSFW Image">
     \`;
     respDiv.classList.add('success');
   } catch (err) {
