@@ -91,7 +91,7 @@ async function igdl(url) {
         }
     });
 
-    const urlParams = new URLSearchParams(downloadUrls[0]?.split('?')[1]); // Ambil filename dari URL pertama
+    const urlParams = new URLSearchParams(downloadUrls[0]?.split('?')[1]);
     let filename = urlParams.get('filename');
     if (filename && filename.endsWith('.mp4')) {
         filename = filename.slice(0, -4);
@@ -242,7 +242,7 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
-// ==================== INSTAGRAM ENDPOINT (BARU) ====================
+// ==================== ENDPOINT INSTAGRAM ====================
 app.get('/instagram', async (req, res) => {
     const { url } = req.query;
     if (!url || !url.includes('instagram.com')) {
@@ -1097,38 +1097,38 @@ async function testInstagram() {
     const jsonStr = JSON.stringify(data, null, 2);
     if (data.status) {
       const r = data.result;
-      let html = `
+      let html = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
           <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-      `;
-      html += `<p><strong>Judul:</strong> ${r.title}</p>`;
+      \`;
+      html += \`<p><strong>Judul:</strong> \${r.title}</p>\`;
       if (r.thumbnail && r.thumbnail !== 'Thumbnail not found') {
-        html += `<img src="${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
+        html += \`<img src="\${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
       }
       if (r.downloadUrls && r.downloadUrls.length > 0) {
-        html += `<p><strong>Download URL:</strong></p><ul>`;
+        html += \`<p><strong>Download URL:</strong></p><ul>\`;
         r.downloadUrls.forEach(url => {
-          html += `<li><a href="${url}" target="_blank" style="color:#00ff88;">${url}</a></li>`;
+          html += \`<li><a href="\${url}" target="_blank" style="color:#00ff88;">\${url}</a></li>\`;
         });
-        html += `</ul>`;
+        html += \`</ul>\`;
       }
-      html += `<pre>${jsonStr}</pre>`;
+      html += \`<pre>\${jsonStr}</pre>\`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = `
+      respDiv.innerHTML = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">${status}</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <div class="badge error">\${status}</div>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <pre>${jsonStr}</pre>
-      `;
+        <pre>\${jsonStr}</pre>
+      \`;
       respDiv.classList.add('error');
     }
   } catch (err) {
-    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
 }
