@@ -211,11 +211,9 @@ app.get('/tiktok', async (req, res) => {
     }
 });
 
-// ==================== BRAT TEXT GENERATOR (MURNI CANVAS) ====================
+// ==================== BRAT TEXT GENERATOR (PERBAIKAN) ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
-    const download = req.query.download === 'true'; // if true, force download
-
     if (!text) {
         return res.status(400).json({ status: 400, message: 'Masukkan parameter text.' });
     }
@@ -231,12 +229,28 @@ app.get('/brat', async (req, res) => {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        // Font stack aman (tidak bergantung font website)
-        const fontFamily = '"Impact", "Arial Black", "Helvetica Bold", "sans-serif"';
-
+        // Gunakan font yang pasti ada di semua sistem
+        // Prioritas: Arial (umum) -> Helvetica -> sans-serif
+        const fontFamily = '"Arial", "Helvetica", "sans-serif"';
+        
+        // Margin
         const margin = 20;
         const maxWidth = width - margin * 2;
         const maxHeight = height - margin * 2;
+
+        // Jika teks kosong atau hanya spasi
+        if (!text.trim()) {
+            ctx.font = `bold 60px ${fontFamily}`;
+            ctx.fillStyle = '#000000';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('(kosong)', width/2, height/2);
+            
+            const buffer = canvas.toBuffer('image/png');
+            res.setHeader('Content-Type', 'image/png');
+            res.setHeader('Content-Length', buffer.length);
+            return res.send(buffer);
+        }
 
         // Cari ukuran font yang pas
         let fontSize = 100;
@@ -247,28 +261,54 @@ app.get('/brat', async (req, res) => {
             ctx.font = `bold ${fontSize}px ${fontFamily}`;
             lineHeight = fontSize * 1.2;
 
+            // Reset lines
             lines = [];
-            let line = '';
-            const words = text.split(' ');
-
-            for (let n = 0; n < words.length; n++) {
-                const testLine = line + words[n] + ' ';
-                const testWidth = ctx.measureText(testLine).width;
-                if (testWidth > maxWidth && n > 0) {
-                    lines.push(line.trim());
-                    line = words[n] + ' ';
+            
+            // Jika teks tidak mengandung spasi (satu kata panjang)
+            if (!text.includes(' ')) {
+                // Ukur lebar teks
+                const textWidth = ctx.measureText(text).width;
+                if (textWidth <= maxWidth && lineHeight <= maxHeight) {
+                    lines = [text];
                 } else {
-                    line = testLine;
+                    // Jika terlalu panjang, turunkan font size
+                    fontSize -= 2;
+                    continue;
                 }
+            } else {
+                // Bagi teks menjadi baris berdasarkan spasi
+                let line = '';
+                const words = text.split(' ');
+
+                for (let n = 0; n < words.length; n++) {
+                    const word = words[n];
+                    const testLine = line ? line + ' ' + word : word;
+                    const testWidth = ctx.measureText(testLine).width;
+                    
+                    if (testWidth > maxWidth && line) {
+                        lines.push(line);
+                        line = word;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                if (line) lines.push(line);
             }
-            lines.push(line.trim());
 
             const totalHeight = lines.length * lineHeight;
             if (totalHeight <= maxHeight) break;
             fontSize -= 2;
         }
 
-        // Gambar teks hitam
+        // Jika tidak ada baris (seharusnya tidak terjadi)
+        if (lines.length === 0) {
+            lines = [text];
+            fontSize = 40;
+            ctx.font = `bold ${fontSize}px ${fontFamily}`;
+            lineHeight = fontSize * 1.2;
+        }
+
+        // Gambar teks
         ctx.fillStyle = '#000000';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -282,10 +322,6 @@ app.get('/brat', async (req, res) => {
         }
 
         const buffer = canvas.toBuffer('image/png');
-
-        if (download) {
-            res.setHeader('Content-Disposition', 'attachment; filename="brat.png"');
-        }
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
         res.send(buffer);
