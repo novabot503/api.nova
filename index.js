@@ -147,6 +147,54 @@ app.get('/webzip', async (req, res) => {
     }
 });
 
+// ==================== TIKTOK ENDPOINT ====================
+app.get('/tiktok', async (req, res) => {
+    const url = req.query.url;
+    if (!url || !url.includes('tiktok.com')) {
+        return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
+    }
+
+    try {
+        const response = await axios.post('https://www.tikwm.com/api/', {}, {
+            headers: {
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'Origin': 'https://www.tikwm.com',
+                'Referer': 'https://www.tikwm.com/',
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            params: {
+                url: url,
+                count: 12,
+                cursor: 0,
+                web: 1,
+                hd: 1
+            }
+        });
+
+        const data = response.data.data;
+        if (!data) {
+            return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
+        }
+
+        res.json({
+            status: true,
+            result: {
+                video: data.hdplay || data.play || data.wmplay ? 'https://www.tikwm.com' + (data.hdplay || data.play || data.wmplay) : null,
+                audio: data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null),
+                title: data.title,
+                author: data.author?.nickname || 'Unknown'
+            }
+        });
+
+    } catch (error) {
+        console.error('TikTok error:', error);
+        res.status(500).json({ status: false, error: 'Gagal memproses permintaan.' });
+    }
+});
+
 // ==================== HALAMAN UTAMA ====================
 app.get('/', (req, res) => {
   const html = `
@@ -322,13 +370,16 @@ body {
 /* RESPONSE CONTAINER (UNTUK GAMBAR DAN JSON) */
 .response-container {
   margin-top: 15px; padding: 12px; background: #1a1f30; border-radius: 8px;
-  border-left: 4px solid #5b8cff; display: none; max-height: 250px; overflow: auto;
+  border-left: 4px solid #5b8cff; display: none; max-height: 400px; overflow: auto;
 }
 .response-container.show { display: block; }
 .response-container.success { border-left-color: #00ff88; }
 .response-container.error { border-left-color: #ff3b30; }
 .response-container img {
   max-width: 100%; max-height: 200px; border-radius: 8px; display: block; margin: 0 auto;
+}
+.response-container video {
+  max-width: 100%; max-height: 300px; border-radius: 8px; display: block; margin: 10px auto;
 }
 .response-container pre {
   white-space: pre-wrap; font-family: 'VT323'; font-size: 12px; color: #ccc;
@@ -401,6 +452,20 @@ body {
       </div>
       <div id="webzipResponse" class="response-container"></div>
     </div>
+
+    <!-- TIKTOK -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/tiktok?url=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
+      </div>
+      <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
+      <div class="input-group">
+        <input type="text" id="tiktokUrl" placeholder="https://www.tiktok.com/@user/video/123456">
+        <button class="start-btn" onclick="testTiktok()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="tiktokResponse" class="response-container"></div>
+    </div>
   </div>
 
   <div class="footer">
@@ -447,17 +512,17 @@ const slider=document.getElementById('newsSlider'), track=document.querySelector
 function startSlider(){clearInterval(slideInt);slideInt=setInterval(()=>{slideIdx=(slideIdx+1)%2;updateSlide();},5000);}
 function updateSlide(){if(track)track.style.transform=\`translateX(-\${slideIdx*50}%)\`;}
 function setupSlider(){
-  if(!slider||!track)return;
-  let isSwiping=false,startX=0,curX=0;
-  const getX=e=>e.type.includes('mouse')?e.pageX:e.touches[0].clientX;
-  slider.addEventListener('touchstart',e=>{startX=getX(e);isSwiping=true;clearInterval(slideInt);});
-  slider.addEventListener('touchmove',e=>{if(!isSwiping)return;curX=getX(e);const diff=curX-startX;if(Math.abs(diff)>20)track.style.transform=\`translateX(-\${slideIdx*50+(diff/slider.offsetWidth)*50}%)\`;});
-  slider.addEventListener('touchend',e=>{if(!isSwiping)return;isSwiping=false;const diff=curX-startX;if(Math.abs(diff)>80)diff>0?slideIdx=(slideIdx-1+2)%2:slideIdx=(slideIdx+1)%2;updateSlide();startSlider();});
-  ['mousedown','mousemove','mouseup','mouseleave'].forEach(ev=>slider.addEventListener(ev,e=>{e.preventDefault();}));
+if(!slider||!track)return;
+let isSwiping=false,startX=0,curX=0;
+const getX=e=>e.type.includes('mouse')?e.pageX:e.touches[0].clientX;
+slider.addEventListener('touchstart',e=>{startX=getX(e);isSwiping=true;clearInterval(slideInt);});
+slider.addEventListener('touchmove',e=>{if(!isSwiping)return;curX=getX(e);const diff=curX-startX;if(Math.abs(diff)>20)track.style.transform=\`translateX(-\${slideIdx*50+(diff/slider.offsetWidth)*50}%)\`;});
+slider.addEventListener('touchend',e=>{if(!isSwiping)return;isSwiping=false;const diff=curX-startX;if(Math.abs(diff)>80)diff>0?slideIdx=(slideIdx-1+2)%2:slideIdx=(slideIdx+1)%2;updateSlide();startSlider();});
+['mousedown','mousemove','mouseup','mouseleave'].forEach(ev=>slider.addEventListener(ev,e=>{e.preventDefault();}));
 }
 startSlider(); setupSlider();
 
-// ==================== WAIFU (RESPONSE DI CONTAINER) ====================
+// ==================== WAIFU ====================
 async function testWaifu() {
   const respDiv = document.getElementById('waifuResponse');
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
@@ -500,6 +565,41 @@ async function testWebzip() {
   }
 }
 
+// ==================== TIKTOK ====================
+async function testTiktok() {
+  const urlInput = document.getElementById('tiktokUrl').value.trim();
+  if (!urlInput) return alert('Masukkan URL TikTok!');
+  const respDiv = document.getElementById('tiktokResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = \`${config.URL}/tiktok?url=\${encodeURIComponent(urlInput)}\`;
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    const status = res.status;
+    if (data.status) {
+      let html = \`<div class="badge success">200 OK</div>\`;
+      html += \`<p><strong>Judul:</strong> \${data.result.title}</p>\`;
+      html += \`<p><strong>Author:</strong> \${data.result.author}</p>\`;
+      if (data.result.video) {
+        html += \`<video src="\${data.result.video}" controls style="max-width:100%;"></video>\`;
+      }
+      if (data.result.audio) {
+        html += \`<p><strong>Audio:</strong> <a href="\${data.result.audio}" target="_blank">Download Audio</a></p>\`;
+      }
+      respDiv.innerHTML = html;
+      respDiv.classList.add('success');
+    } else {
+      respDiv.innerHTML = \`<div class="badge error">\${status}</div><pre>\${JSON.stringify(data,null,2)}</pre>\`;
+      respDiv.classList.add('error');
+    }
+  } catch (err) {
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
+  }
+}
+
+// ==================== COPY TEXT ====================
 function copyText(text, label) {
   navigator.clipboard.writeText(text).then(()=>alert(\`Link \${label} disalin!\`));
 }
@@ -521,9 +621,9 @@ document.addEventListener('keydown',e=>{
 // ==================== START SERVER ====================
 app.listen(PORT, HOST, () => {
   console.log(`
-\x1b[1m\x1b[34m╔═╗╦ ╦╦═╗╦ ╦╔╦╗╔═╗╔═╗╦  \x1b[0m
-\x1b[1m\x1b[34m╠═╝╚╦╝╠╦╝║ ║ ║ ║╣ ╠═╝║  \x1b[0m
-\x1b[1m\x1b[34m╩   ╩ ╩╚═╚═╝ ╩ ╚═╝╩  ╩═╝\x1b[0m
+\x1b[1m\x1b[34m╔╗ ╦  ╔═╗╔═╗╔═╗╦═╗╔═╗ \x1b[31m
+\x1b[1m\x1b[34m╠╩╗║  ╠═╣╔═╝║╣ ╠╦╝╚═╗ \x1b[31m
+\x1b[1m\x1b[34m╚═╝╩═╝╩ ╩╚═╝╚═╝╩╚═╚═╝ \x1b[31m
 \x1b[1m\x1b[33mN O V A B O T   A P I   v${config.VERSI_WEB || '1.0'}\x1b[0m
 \x1b[1m\x1b[32m═══════════════════════════════════════\x1b[0m
 🌐 Server: http://${HOST}:${PORT}
