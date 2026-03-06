@@ -11,42 +11,49 @@ const HOST = config.HOST || 'localhost';
 app.use(require('cors')());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// HTTPS Agent untuk Pinterest
 const agent = new https.Agent({
-rejectUnauthorized: true,
-maxVersion: 'TLSv1.3',
-minVersion: 'TLSv1.2',
+  rejectUnauthorized: true,
+  maxVersion: 'TLSv1.3',
+  minVersion: 'TLSv1.2',
 });
+
+// Fungsi helper
 async function fetchJson(url) {
-const res = await axios.get(url);
-return res.data;
+  const res = await axios.get(url);
+  return res.data;
 }
+
 async function getBuffer(url) {
-const res = await axios.get(url, { responseType: 'arraybuffer' });
-return Buffer.from(res.data);
+  const res = await axios.get(url, { responseType: 'arraybuffer' });
+  return Buffer.from(res.data);
 }
+
+// Notifikasi error ke Telegram
 async function sendErrorToTelegram(error) {
-if (!config.TELEGRAM_TOKEN || !config.OWNER_ID) return;
-const message = `❌ *API Error*\n\n${error.message}\n\n${error.stack || ''}`;
-try {
-await axios.post(`https://api.telegram.org/bot${config.TELEGRAM_TOKEN}/sendMessage`, {
-chat_id: config.OWNER_ID,
-text: message,
-parse_mode: 'Markdown'
-});
-} catch (e) {
-console.error('Gagal kirim ke Telegram:', e.message);
-}
+  if (!config.TELEGRAM_TOKEN || !config.OWNER_ID) return;
+  const message = `❌ *API Error*\n\n${error.message}\n\n${error.stack || ''}`;
+  try {
+    await axios.post(`https://api.telegram.org/bot${config.TELEGRAM_TOKEN}/sendMessage`, {
+      chat_id: config.OWNER_ID,
+      text: message,
+      parse_mode: 'Markdown'
+    });
+  } catch (e) {
+    console.error('Gagal kirim ke Telegram:', e.message);
+  }
 }
 
 // ==================== PINTEREST HELPER (BARU) ====================
 async function getCookies() {
-try {
-const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent: agent });
-const setCookieHeaders = response.headers['set-cookie'];
-if (setCookieHeaders) {
-const cookies = setCookieHeaders.map(cookieString => cookieString.split(';')[0].trim());
-return cookies.join('; ');
-}
+  try {
+    const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent: agent });
+    const setCookieHeaders = response.headers['set-cookie'];
+    if (setCookieHeaders) {
+      const cookies = setCookieHeaders.map(cookieString => cookieString.split(';')[0].trim());
+      return cookies.join('; ');
+    }
     return null;
   } catch (error) {
     console.error('Gagal ambil cookie:', error.message);
@@ -817,144 +824,109 @@ body {
     </div>
   </div>
 
-   <div class="lux-section-title">API Endpoints</div>
+  <div class="lux-section-title">API Endpoints</div>
   <div class="api-card">
-<!-- WAIFU -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span>
-    <span class="url">/waifu</span>
-    <button class="copy-btn" onclick="copyText('${safeUrl}/waifu', 'waifu')">
-      <i class="fas fa-copy"></i>Salin
-    </button>
-  </div>
-  <div class="api-desc">Gambar waifu random (PNG)</div>
-  <div class="input-group" style="justify-content: flex-end;">
-    <button class="start-btn" onclick="testWaifu()">
-      <i class="fas fa-play"></i> Start
-    </button>
-  </div>
-  <div id="waifuResponse" class="response-container"></div>
-</div>
+    <!-- WAIFU -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/waifu</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
+      </div>
+      <div class="api-desc">Gambar waifu random (PNG)</div>
+      <div class="input-group" style="justify-content: flex-end;">
+        <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="waifuResponse" class="response-container"></div>
+    </div>
 
-<!-- NSFW -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span>
-    <span class="url">/nsfw</span>
-    <button class="copy-btn" onclick="copyText('${safeUrl}/nsfw', 'nsfw')">
-      <i class="fas fa-copy"></i>Salin
-    </button>
-  </div>
-  <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
-  <div class="input-group" style="justify-content: flex-end;">
-    <button class="start-btn" onclick="testNsfw()">
-      <i class="fas fa-play"></i> Start
-    </button>
-  </div>
-  <div id="nsfwResponse" class="response-container"></div>
-</div>
+    <!-- NSFW -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/nsfw</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
+      </div>
+      <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
+      <div class="input-group" style="justify-content: flex-end;">
+        <button class="start-btn" onclick="testNsfw()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="nsfwResponse" class="response-container"></div>
+    </div>
 
-<!-- WEBZIP -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span>
-    <span class="url">/webzip?url=</span>
-    <button class="copy-btn" onclick="copyText('${safeUrl}/webzip?url=', 'webzip')">
-      <i class="fas fa-copy"></i>Salin
-    </button>
-  </div>
-  <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
-  <div class="input-group">
-    <input type="text" id="webzipUrl" placeholder="https://contoh.com">
-    <button class="start-btn" onclick="testWebzip()">
-      <i class="fas fa-play"></i> Start
-    </button>
-  </div>
-  <div id="webzipResponse" class="response-container"></div>
-</div>
+    <!-- WEBZIP -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/webzip?url=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
+      </div>
+      <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
+      <div class="input-group">
+        <input type="text" id="webzipUrl" placeholder="https://contoh.com">
+        <button class="start-btn" onclick="testWebzip()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="webzipResponse" class="response-container"></div>
+    </div>
 
-<!-- TIKTOK -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span>
-    <span class="url">/tiktok?url=</span>
-    <button class="copy-btn" onclick="copyText('${safeUrl}/tiktok?url=', 'tiktok')">
-      <i class="fas fa-copy"></i>Salin
-    </button>
-  </div>
-  <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
-  <div class="input-group">
-    <input type="text" id="tiktokUrl" placeholder="https://www.tiktok.com/@user/video/123456">
-    <button class="start-btn" onclick="testTiktok()">
-      <i class="fas fa-play"></i> Start
-    </button>
-  </div>
-  <div id="tiktokResponse" class="response-container"></div>
-</div>
+    <!-- TIKTOK -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/tiktok?url=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
+      </div>
+      <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
+      <div class="input-group">
+        <input type="text" id="tiktokUrl" placeholder="https://www.tiktok.com/@user/video/123456">
+        <button class="start-btn" onclick="testTiktok()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="tiktokResponse" class="response-container"></div>
+    </div>
 
-<!-- BRAT -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span>
-    <span class="url">/brat?text=</span>
-    <button class="copy-btn" onclick="copyText('${safeUrl}/brat?text=', 'brat')">
-      <i class="fas fa-copy"></i>Salin
-    </button>
-  </div>
-  <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
-  <div class="input-group">
-    <input type="text" id="bratText" placeholder="Masukkan teks">
-    <button class="start-btn" onclick="testBrat()">
-      <i class="fas fa-play"></i> Start
-    </button>
-  </div>
-  <div id="bratResponse" class="response-container"></div>
-</div>
+    <!-- BRAT -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/brat?text=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
+      </div>
+      <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
+      <div class="input-group">
+        <input type="text" id="bratText" placeholder="Masukkan teks">
+        <button class="start-btn" onclick="testBrat()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="bratResponse" class="response-container"></div>
+    </div>
 
 <!-- PINTEREST -->
 <div class="api-endpoint">
   <div class="api-header">
-    <span class="method">GET</span>
-    <span class="url">/pinterest?q=</span>
-    <button class="copy-btn" onclick="copyText('${safeUrl}/pinterest?q=', 'pinterest')">
-      <i class="fas fa-copy"></i>Salin
-    </button>
+    <span class="method">GET</span><span class="url">/pinterest?q=</span>
+    <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
   </div>
   <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
   <div class="input-group">
     <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
-    <button class="start-btn" onclick="testPinterest()">
-      <i class="fas fa-play"></i> Start
-    </button>
+    <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
   </div>
   <div id="pinterestResponse" class="response-container"></div>
 </div>
 
-<!-- BRATVID -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span>
-    <span class="url">/bratvid?text=</span>
-    <button class="copy-btn" onclick="copyText('${safeUrl}/bratvid?text=', 'bratvid')">
-      <i class="fas fa-copy"></i>Salin
-    </button>
+    <!-- BRATVID -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/bratvid?text=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
+      </div>
+      <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
+      <div class="input-group">
+        <input type="text" id="bratvidText" placeholder="Masukkan teks">
+        <button class="start-btn" onclick="testBratvid()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="bratvidResponse" class="response-container"></div>
+    </div>
   </div>
-  <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
-  <div class="input-group">
-    <input type="text" id="bratvidText" placeholder="Masukkan teks">
-    <button class="start-btn" onclick="testBratvid()">
-      <i class="fas fa-play"></i> Start
-    </button>
+
+  <div class="footer">
+    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${config.DEVELOPER} • v${config.VERSI_WEB}</p>
   </div>
-  <div id="bratvidResponse" class="response-container"></div>
 </div>
-
-<div class="footer">
-  <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${safeDeveloper} • v${safeVersi}</p>
-</div>
-</div>
-
 
 <script>
 // ==================== STATUS PANEL TOGGLE ====================
