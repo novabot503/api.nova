@@ -162,131 +162,107 @@ app.get('/', (req, res) => {
 <meta property="og:url" content="${config.URL}">
 <meta property="og:title" content="NovaBot API">
 <meta property="og:description" content="API untuk bot WhatsApp Novabot">
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@500;700;900&family=VT323&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&family=VT323&display=swap" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 <style>
-:root {
-  --bg-main: #02040a;
-  --bg-card: #0b0f19;
-  --primary: #3a6df0;
-  --primary-light: #5b8cff;
-  --accent-red: #ff3b30;
-  --accent-gold: #ffcc00;
-  --text-main: #ffffff;
-  --text-sub: #8b9bb4;
-  --border-color: #1c2538;
-  --glass-bg: rgba(255, 255, 255, 0.03);
-  --glass-border: rgba(255, 255, 255, 0.05);
-}
-* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body {
   font-family: 'Rajdhani', sans-serif;
-  background: var(--bg-main);
-  color: var(--text-main);
+  background: #0a0c14;
+  color: #fff;
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow-x: hidden;
-  padding-bottom: 60px;
+  padding-bottom: 40px;
 }
+/* HEADER */
 .custom-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 60px;
-  background: rgba(2, 4, 10, 0.95);
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  z-index: 100;
-  border-bottom: 1px solid var(--border-color);
+  position: sticky; top: 0; width: 100%; height: 55px;
+  background: rgba(10, 12, 20, 0.95); backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; z-index: 100; border-bottom: 1px solid #1f2a40;
 }
-.header-left { display: flex; align-items: center; gap: 15px; }
-.header-title { font-family: 'Orbitron'; font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 1px; }
+.header-title { font-family: 'Orbitron'; font-size: 20px; color: #5b8cff; letter-spacing: 1px; }
 .menu-btn {
-  width: 40px; height: 40px; display: flex; flex-direction: column; justify-content: center;
-  align-items: center; gap: 6px; cursor: pointer; border-radius: 8px;
-  transition: background 0.2s;
+  width: 40px; height: 40px; display: flex; flex-direction: column;
+  justify-content: center; align-items: center; gap: 5px; cursor: pointer;
+  border-radius: 8px; transition: 0.2s;
 }
-.menu-btn:hover { background: rgba(255,255,255,0.1); }
-.menu-btn span {
-  width: 24px; height: 2px; background: var(--text-main); border-radius: 2px;
-  transition: 0.3s;
-}
+.menu-btn:hover { background: #1f2a40; }
+.menu-btn span { width: 22px; height: 2px; background: #fff; border-radius: 2px; transition: 0.3s; }
 .menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(6px, 6px); }
 .menu-btn.active span:nth-child(2) { opacity: 0; }
 .menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(6px, -6px); }
-.page-container { padding: 80px 20px 20px; transition: filter 0.3s; }
-.page-container.blur { filter: blur(4px); pointer-events: none; }
+
+/* PAGE CONTAINER */
+.page-container { padding: 20px; transition: 0.3s; }
+.page-container.blur { filter: blur(3px); pointer-events: none; }
 
 /* STATUS PANEL */
 .status-panel {
-  position: fixed; top: 70px; right: 20px; width: 320px;
-  background: var(--bg-card); border: 1px solid var(--primary); border-radius: 16px;
+  position: fixed; top: 70px; right: 20px; width: 300px;
+  background: #0f1320; border: 1px solid #2a3a60; border-radius: 16px;
   padding: 20px; z-index: 200; box-shadow: 0 10px 30px rgba(0,0,0,0.7);
   transform: translateX(120%); transition: transform 0.3s ease;
   backdrop-filter: blur(8px);
 }
 .status-panel.show { transform: translateX(0); }
-.status-panel h3 {
-  font-family: 'Orbitron'; color: var(--primary); margin-bottom: 15px;
-  display: flex; align-items: center; gap: 8px;
-}
-/* Wave ala Pterodactyl */
+.status-panel h3 { font-family: 'Orbitron'; color: #5b8cff; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
+
+/* WAVE IMPROVED */
 .wave-container {
-  position: relative; width: 100%; height: 50px; margin: 15px 0;
-  background: #0a0e1a; border-radius: 8px; overflow: hidden;
+  position: relative; width: 100%; height: 80px; margin: 20px 0;
+  background: #0b0e18; border-radius: 12px; overflow: hidden;
+  border: 1px solid #1f2a40;
 }
 .wave-group {
   position: absolute; width: 100%; height: 100%;
-  background: linear-gradient(90deg, transparent 0%, transparent 20%, var(--primary) 20%, var(--primary) 40%, transparent 40%);
-  background-size: 200% 100%;
-  animation: waveMove 8s linear infinite;
+  background: linear-gradient(90deg, transparent, transparent 20%, #3a6df0 20%, #3a6df0 40%, transparent 40%, transparent 60%, #5b8cff 60%, #5b8cff 80%, transparent 80%);
+  background-size: 250% 100%;
+  animation: waveMove 10s linear infinite;
   opacity: 0.15;
 }
 .wave-group:nth-child(2) {
-  background: linear-gradient(90deg, transparent 0%, transparent 30%, var(--primary-light) 30%, var(--primary-light) 50%, transparent 50%);
-  background-size: 250% 100%;
-  animation: waveMove 12s linear infinite reverse;
+  background: linear-gradient(90deg, transparent, transparent 30%, #00ff88 30%, #00ff88 50%, transparent 50%, transparent 70%, #3a6df0 70%, #3a6df0 90%, transparent 90%);
+  background-size: 300% 100%;
+  animation: waveMove 14s linear infinite reverse;
   opacity: 0.1;
 }
 .wave-group:nth-child(3) {
-  background: linear-gradient(90deg, transparent 0%, transparent 10%, #00ff88 10%, #00ff88 25%, transparent 25%);
-  background-size: 180% 100%;
-  animation: waveMove 6s linear infinite;
+  background: linear-gradient(90deg, transparent, transparent 10%, #ffcc00 10%, #ffcc00 25%, transparent 25%, transparent 40%, #5b8cff 40%, #5b8cff 55%, transparent 55%);
+  background-size: 200% 100%;
+  animation: waveMove 8s linear infinite;
   opacity: 0.08;
 }
 @keyframes waveMove { 0% { background-position: 0 0; } 100% { background-position: 200% 0; } }
+
 .status-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;
 }
 .status-item {
-  background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px;
-  border-left: 2px solid var(--primary);
+  background: #1a1f30; border-radius: 8px; padding: 10px;
+  border-left: 3px solid #3a6df0;
 }
-.status-item .label { color: var(--text-sub); font-size: 11px; text-transform: uppercase; }
+.status-item .label { color: #8a9bb0; font-size: 10px; text-transform: uppercase; }
 .status-item .value { color: #fff; font-size: 14px; font-weight: bold; font-family: 'VT323'; }
 
 /* HEADER CARD */
 .lux-header-card {
-  background: linear-gradient(135deg, #1e3c72, #2a5298);
-  border-radius: 16px; padding: 20px; color: white; margin-bottom: 25px;
-  border: 1px solid rgba(255,255,255,0.1);
+  background: linear-gradient(135deg, #1a2a48, #14233c);
+  border-radius: 16px; padding: 20px; margin-bottom: 25px;
+  border: 1px solid #2a3a60;
 }
-.lux-header-card h2 { font-family: 'Orbitron'; font-size: 18px; }
+.lux-header-card h2 { font-family: 'Orbitron'; font-size: 20px; color: #5b8cff; }
+.lux-header-card p { font-size: 14px; color: #a0b0c0; }
+
+/* SECTION TITLE */
 .lux-section-title {
   font-family: 'Orbitron'; font-size: 16px; color: #fff; margin-bottom: 15px;
-  padding-left: 5px; border-left: 3px solid var(--primary);
+  padding-left: 8px; border-left: 4px solid #5b8cff;
 }
 
 /* SLIDER */
 .slider-container {
-  width: 100%; background: var(--bg-card); border-radius: 16px; overflow: hidden;
-  border: 1px solid var(--border-color); margin-bottom: 25px; height: 150px;
+  width: 100%; background: #101520; border-radius: 12px; overflow: hidden;
+  border: 1px solid #1f2a40; margin-bottom: 25px; height: 150px;
   touch-action: pan-y; cursor: grab; user-select: none;
 }
 .slider-track { display: flex; width: 200%; height: 100%; transition: transform 0.4s; }
@@ -294,90 +270,86 @@ body {
 .slide video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .slide-content {
   position: absolute; bottom: 0; left: 0; width: 100%; padding: 15px;
-  background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, transparent);
+  background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
 }
-.slide-content h3 { font-family: 'Orbitron'; font-size: 14px; }
+.slide-content h3 { font-family: 'Orbitron'; font-size: 14px; color: #fff; }
+.slide-content p { font-size: 12px; color: #ccc; }
 
-/* API CARD */
-.api-card { margin-bottom: 25px; }
+/* API ENDPOINT CARDS */
+.api-card { margin-bottom: 20px; }
 .api-endpoint {
-  background: var(--glass-bg); backdrop-filter: blur(4px);
-  border: 1px solid var(--glass-border); border-radius: 12px;
-  padding: 16px; margin-bottom: 15px; transition: all 0.2s;
+  background: #101520; border: 1px solid #1f2a40; border-radius: 12px;
+  padding: 16px; margin-bottom: 15px; transition: 0.2s;
 }
+.api-endpoint:hover { border-color: #5b8cff; }
 .api-header {
   display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
 }
-.api-header .method {
-  background: rgba(255,204,0,0.15); color: var(--accent-gold); font-weight: bold;
-  padding: 2px 10px; border-radius: 30px; font-size: 12px; border: 1px solid rgba(255,204,0,0.3);
+.method {
+  background: #1f2a40; color: #ffcc00; font-weight: bold; padding: 2px 10px;
+  border-radius: 30px; font-size: 12px; border: 1px solid #ffcc00;
 }
-.api-header .url {
+.url {
   color: #00ff88; word-break: break-all; font-family: 'VT323'; font-size: 14px;
-  background: rgba(0,255,136,0.05); padding: 2px 10px; border-radius: 30px; flex: 1;
+  background: #1a1f30; padding: 2px 10px; border-radius: 30px; flex: 1;
 }
 .copy-btn {
-  background: transparent; border: 1px solid var(--primary); color: var(--primary);
+  background: transparent; border: 1px solid #5b8cff; color: #5b8cff;
   padding: 4px 12px; border-radius: 30px; cursor: pointer; font-size: 12px;
   display: inline-flex; align-items: center; gap: 5px; transition: 0.2s;
 }
-.copy-btn:hover { background: var(--primary); color: #000; }
-.api-desc { color: var(--text-sub); font-size: 13px; margin-bottom: 10px; }
+.copy-btn:hover { background: #5b8cff; color: #000; }
+.api-desc { color: #a0b0c0; font-size: 13px; margin-bottom: 12px; }
+
+/* TOMBOL START */
 .start-btn {
-  background: linear-gradient(90deg, var(--primary), var(--primary-light)); color: #000;
-  border: none; padding: 6px 18px; border-radius: 30px; font-size: 13px; font-weight: bold;
-  cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px;
+  background: #5b8cff; color: #000; border: none; padding: 6px 16px;
+  border-radius: 30px; font-size: 13px; font-weight: bold; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; transition: 0.2s;
 }
 .start-btn:hover { filter: brightness(1.1); transform: scale(1.02); }
-.test-result {
-  margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.3);
-  border-radius: 8px; max-height: 200px; overflow: auto;
-  font-family: 'VT323'; font-size: 13px; border: 1px solid var(--border-color);
-}
-.test-result.success { border-left: 3px solid #00ff88; }
-.test-result.error { border-left: 3px solid var(--accent-red); }
-.badge {
-  display: inline-block; padding: 2px 8px; border-radius: 30px; font-weight: bold; font-size: 11px;
-}
-.badge.success { background: #00ff88; color: #000; }
-.badge.error { background: var(--accent-red); color: #fff; }
-.test-result img { max-width: 100%; max-height: 150px; border-radius: 8px; }
-.test-result pre { white-space: pre-wrap; font-size: 11px; color: #ccc; }
 
-/* MODAL UNTUK GAMBAR */
-.modal {
-  display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center;
-}
-.modal.show { display: flex; }
-.modal-content {
-  max-width: 90%; max-height: 90%; border-radius: 12px; box-shadow: 0 0 30px var(--primary);
-}
-.modal-close {
-  position: absolute; top: 20px; right: 30px; color: #fff; font-size: 40px;
-  cursor: pointer; transition: 0.2s;
-}
-.modal-close:hover { color: var(--primary); }
-
-/* INPUT */
-.webzip-input {
+/* INPUT GROUP */
+.input-group {
   display: flex; gap: 10px; align-items: center; margin: 10px 0; flex-wrap: wrap;
 }
-.webzip-input input {
-  flex: 1; padding: 10px 14px; border-radius: 30px; border: 1px solid var(--border-color);
-  background: var(--glass-bg); color: #fff; font-size: 13px;
+.input-group input {
+  flex: 1; padding: 8px 14px; border-radius: 30px; border: 1px solid #1f2a40;
+  background: #1a1f30; color: #fff; font-size: 13px;
 }
-.webzip-input input:focus { outline: none; border-color: var(--primary); }
+.input-group input:focus { outline: none; border-color: #5b8cff; }
 
+/* RESPONSE CONTAINER (UNTUK GAMBAR DAN JSON) */
+.response-container {
+  margin-top: 15px; padding: 12px; background: #1a1f30; border-radius: 8px;
+  border-left: 4px solid #5b8cff; display: none; max-height: 250px; overflow: auto;
+}
+.response-container.show { display: block; }
+.response-container.success { border-left-color: #00ff88; }
+.response-container.error { border-left-color: #ff3b30; }
+.response-container img {
+  max-width: 100%; max-height: 200px; border-radius: 8px; display: block; margin: 0 auto;
+}
+.response-container pre {
+  white-space: pre-wrap; font-family: 'VT323'; font-size: 12px; color: #ccc;
+}
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 30px; font-weight: bold; font-size: 11px;
+  margin-bottom: 8px;
+}
+.badge.success { background: #00ff88; color: #000; }
+.badge.error { background: #ff3b30; color: #fff; }
+
+/* FOOTER */
 .footer {
-  text-align: center; padding: 20px; border-top: 1px solid var(--border-color);
-  color: var(--text-sub); font-size: 12px; margin-top: 20px;
+  text-align: center; padding: 20px; border-top: 1px solid #1f2a40;
+  color: #8a9bb0; font-size: 12px; margin-top: 20px;
 }
 </style>
 </head>
 <body>
 <div class="custom-header">
-  <div class="header-left"><div class="header-title">NOVABOT API</div></div>
+  <div class="header-title">NOVABOT API</div>
   <div class="menu-btn" id="menuBtn"><span></span><span></span><span></span></div>
 </div>
 
@@ -392,7 +364,7 @@ body {
 <div class="page-container" id="pageContainer">
   <div class="lux-header-card">
     <h2>Novabot API Service</h2>
-    <p style="font-size:13px; opacity:0.8;">API untuk bot WhatsApp Novabot</p>
+    <p>API untuk bot WhatsApp Novabot</p>
   </div>
 
   <div class="lux-section-title">Latest News</div>
@@ -413,33 +385,27 @@ body {
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
       <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
-      <div id="waifuResult" class="test-result" style="display:none;"></div>
+      <div id="waifuResponse" class="response-container"></div>
     </div>
 
     <!-- WEBZIP -->
     <div class="api-endpoint">
       <div class="api-header">
-        <span class="method">GET</span><span class="url">/webzip?url=...</span>
+        <span class="method">GET</span><span class="url">/webzip?url=</span>
         <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
       </div>
       <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
-      <div class="webzip-input">
+      <div class="input-group">
         <input type="text" id="webzipUrl" placeholder="https://contoh.com">
         <button class="start-btn" onclick="testWebzip()"><i class="fas fa-play"></i> Start</button>
       </div>
-      <div id="webzipResult" class="test-result" style="display:none;"></div>
+      <div id="webzipResponse" class="response-container"></div>
     </div>
   </div>
 
   <div class="footer">
     <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${config.DEVELOPER} • v${config.VERSI_WEB}</p>
   </div>
-</div>
-
-<!-- MODAL GAMBAR -->
-<div id="imageModal" class="modal" onclick="this.classList.remove('show')">
-  <span class="modal-close" onclick="document.getElementById('imageModal').classList.remove('show')">&times;</span>
-  <img class="modal-content" id="modalImage" src="">
 </div>
 
 <script>
@@ -491,24 +457,23 @@ function setupSlider(){
 }
 startSlider(); setupSlider();
 
-// ==================== WAIFU (MODAL) ====================
+// ==================== WAIFU (RESPONSE DI CONTAINER) ====================
 async function testWaifu() {
-  const resultDiv = document.getElementById('waifuResult');
-  resultDiv.style.display='block';
-  resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-  resultDiv.className = 'test-result';
+  const respDiv = document.getElementById('waifuResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
   try {
     const res = await fetch('${config.URL}/waifu');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    const modal = document.getElementById('imageModal');
-    const modalImg = document.getElementById('modalImage');
-    modalImg.src = url;
-    modal.classList.add('show');
-    resultDiv.style.display='none';
+    respDiv.innerHTML = \`
+      <div class="badge success">200 OK</div>
+      <img src="\${url}" alt="Waifu Image">
+    \`;
+    respDiv.classList.add('success');
   } catch (err) {
-    resultDiv.innerHTML = \`<div class="badge error">Error</div> \${err.message}\`;
-    resultDiv.classList.add('error');
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
   }
 }
 
@@ -516,23 +481,22 @@ async function testWaifu() {
 async function testWebzip() {
   const urlInput = document.getElementById('webzipUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL!');
-  const resultDiv = document.getElementById('webzipResult');
-  resultDiv.style.display='block';
-  resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-  resultDiv.className = 'test-result';
+  const respDiv = document.getElementById('webzipResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
   try {
     const apiUrl = \`${config.URL}/webzip?url=\${encodeURIComponent(urlInput)}\`;
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
-    resultDiv.innerHTML = \`
+    respDiv.innerHTML = \`
       <div class="badge \${status===200?'success':'error'}">\${status}</div>
       <pre>\${JSON.stringify(data,null,2)}</pre>
     \`;
-    resultDiv.classList.add(status===200?'success':'error');
+    respDiv.classList.add(status===200?'success':'error');
   } catch (err) {
-    resultDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
-    resultDiv.classList.add('error');
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
   }
 }
 
