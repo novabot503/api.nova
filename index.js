@@ -1,8 +1,5 @@
 const express = require('express');
 const axios = require('axios');
-const qs = require('qs');
-const cheerio = require('cheerio');
-const CryptoJS = require('crypto-js');
 const cloudscraper = require('cloudscraper');
 const https = require('https');
 const config = require('./setting.js');
@@ -46,62 +43,6 @@ async function sendErrorToTelegram(error) {
   } catch (e) {
     console.error('Gagal kirim ke Telegram:', e.message);
   }
-}
-
-// ==================== INSTAGRAM HELPER (NEW) ====================
-async function igdl(url) {
-    const data = qs.stringify({
-        'q': url,
-        't': 'media',
-        'lang': 'en'
-    });
-
-    const config = {
-        method: 'POST',
-        url: 'https://instanavigation.app/api/ajaxSearch',
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Android 10; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'accept-language': 'id-ID',
-            'referer': 'https://instanavigation.app/',
-            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'x-requested-with': 'XMLHttpRequest',
-            'origin': 'https://instanavigation.app',
-            'alt-used': 'instanavigation.app',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-origin',
-            'priority': 'u=0',
-            'te': 'trailers',
-        },
-        data: data
-    };
-
-    const api = await axios.request(config);
-    const html = api.data.data;
-
-    const $ = cheerio.load(html);
-    const thumbnail = $('.download-items__thumb img').attr('src');
-
-    const downloadUrls = [];
-    $('.download-items__btn a').each((index, element) => {
-        const href = $(element).attr('href');
-        if (href) {
-            downloadUrls.push(href);
-        }
-    });
-
-    const urlParams = new URLSearchParams(downloadUrls[0]?.split('?')[1]);
-    let filename = urlParams.get('filename');
-    if (filename && filename.endsWith('.mp4')) {
-        filename = filename.slice(0, -4);
-    }
-
-    return {
-        title: filename || 'Title not found',
-        thumbnail: thumbnail || 'Thumbnail not found',
-        downloadUrls: downloadUrls.length > 0 ? downloadUrls : ['Download URL not found']
-    };
 }
 
 // ==================== PINTEREST HELPER ====================
@@ -242,6 +183,18 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
+// ==================== INSTAGRAM HELPER (NEW - VIA API EXTERNAL) ====================
+async function ambilDataInstagram(url) {
+    const apiUrl = `https://api.apocalypse.web.id/download/igdl?url=${encodeURIComponent(url)}`;
+    try {
+        const response = await axios.get(apiUrl, { timeout: 15000 });
+        return response.data;
+    } catch (error) {
+        console.error('API error:', error.message);
+        return { status: false, error: 'Gagal mengambil data' };
+    }
+}
+
 // ==================== ENDPOINT INSTAGRAM ====================
 app.get('/instagram', async (req, res) => {
     const { url } = req.query;
@@ -249,10 +202,27 @@ app.get('/instagram', async (req, res) => {
         return res.status(400).json({ status: false, error: 'URL Instagram tidak valid.' });
     }
     try {
-        const results = await igdl(url);
+        const result = await ambilDataInstagram(url);
+        if (!result.status) {
+            return res.status(500).json({ status: false, error: result.error || 'Unknown error' });
+        }
+        const data = result.result;
+        const medias = data.medias || [];
+        const videoHD = medias.find(m => m.type === 'video');
+        
+        // Siapkan response JSON
         res.json({
             status: true,
-            result: results
+            result: {
+                author: data.author || 'Tidak diketahui',
+                caption: data.title || 'Tidak ada caption',
+                views: data.view_count || 0,
+                likes: data.like_count || 0,
+                duration: data.duration || 0,
+                source: data.source || 'Instagram',
+                thumbnail: data.thumbnail || null,
+                videoUrl: videoHD ? videoHD.url : null
+            }
         });
     } catch (error) {
         console.error('Instagram error:', error);
@@ -1103,16 +1073,14 @@ async function testInstagram() {
           <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
       \`;
-      html += \`<p><strong>Judul:</strong> \${r.title}</p>\`;
-      if (r.thumbnail && r.thumbnail !== 'Thumbnail not found') {
-        html += \`<img src="\${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
-      }
-      if (r.downloadUrls && r.downloadUrls.length > 0) {
-        html += \`<p><strong>Download URL:</strong></p><ul>\`;
-        r.downloadUrls.forEach(url => {
-          html += \`<li><a href="\${url}" target="_blank" style="color:#00ff88;">\${url}</a></li>\`;
-        });
-        html += \`</ul>\`;
+      html += \`<p><strong>Author:</strong> \${r.author}</p>\`;
+      if (r.caption) html += \`<p><strong>Caption:</strong> \${r.caption}</p>\`;
+      html += \`<p><i class="fas fa-eye"></i> Views: \${r.views} • <i class="fas fa-heart"></i> Likes: \${r.likes}</p>\`;
+      if (r.duration) html += \`<p><strong>Durasi:</strong> \${r.duration}s</p>\`;
+      if (r.thumbnail) html += \`<img src="\${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
+      if (r.videoUrl) {
+        html += \`<video src="\${r.videoUrl}" controls style="max-width:100%; margin-top:10px;"></video>\`;
+        html += \`<p><a href="\${r.videoUrl}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download Video</a></p>\`;
       }
       html += \`<pre>\${jsonStr}</pre>\`;
       respDiv.innerHTML = html;
