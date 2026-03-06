@@ -7,6 +7,7 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "node-fetch": "^2.6.1",
     "axios": "^1.6.2",
     "cloudscraper": "^4.6.0",
     "cors": "^2.8.5",

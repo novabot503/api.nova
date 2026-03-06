@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const fetch = require("node-fetch");
 const cloudscraper = require('cloudscraper');
 const config = require('./setting.js');
 
@@ -37,48 +38,46 @@ async function sendErrorToTelegram(error) {
   }
 }
 
-// ==================== API ENDPOINTS ====================
-app.get('/waifu', async (req, res) => {
-  try {
-    const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
-    const buffer = await getBuffer(data.url);
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': buffer.length,
+// ==================== PINTEREST HELPER ====================
+async function pinterest2(query) {
+    return new Promise(async (resolve, reject) => {
+        const baseUrl = 'https://www.pinterest.com/resource/BaseSearchResource/get/';
+        const queryParams = {
+            source_url: '/search/pins/?q=' + encodeURIComponent(query),
+            data: JSON.stringify({
+                options: {
+                    isPrefetch: false,
+                    query,
+                    scope: 'pins',
+                    no_fetch_context_on_resource: false
+                },
+                context: {}
+            }),
+            _: Date.now()
+        };
+        const url = new URL(baseUrl);
+        Object.entries(queryParams).forEach(entry => url.searchParams.set(entry[0], entry[1]));
+        try {
+            const json = await (await fetch(url.toString())).json();
+            const results = json.resource_response?.data?.results ?? [];
+            const result = results.map(item => ({
+                pin: 'https://www.pinterest.com/pin/' + (item.id ?? ''),
+                link: item.link ?? '',
+                created_at: (new Date(item.created_at)).toLocaleDateString('id-ID', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                }) ?? '',
+                id: item.id ?? '',
+                images_url: item.images?.['736x']?.url ?? '',
+                grid_title: item.grid_title ?? ''
+            }));
+            resolve(result);
+        } catch (e) {
+            reject(e);
+        }
     });
-    res.end(buffer);
-  } catch (error) {
-    await sendErrorToTelegram(error);
-    res.status(500).send(`Error: ${error.message}`);
-  }
-});
-
-app.get('/nsfw', async (req, res) => {
-  try {
-    const types = ["blowjob", "neko", "trap", "waifu"];
-    const randomType = types[Math.floor(Math.random() * types.length)];
-    const data = await fetchJson(`https://api.waifu.pics/nsfw/${randomType}`);
-    const buffer = await getBuffer(data.url);
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': buffer.length,
-    });
-    res.end(buffer);
-  } catch (error) {
-    await sendErrorToTelegram(error);
-    res.status(500).send(`Error: ${error.message}`);
-  }
-});
-
-app.get('/api/status', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    version: config.VERSI_WEB, 
-    developer: config.DEVELOPER,
-    uptime: process.uptime(),
-    timestamp: Date.now()
-  });
-});
+}
 
 // ==================== WEBZIP ENDPOINT ====================
 async function saveweb2zip(url, options = {}) {
@@ -137,6 +136,68 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
+// ==================== PINTEREST ENDPOINT ====================
+app.get('/pinterest', async (req, res) => {
+    const { q } = req.query;
+    if (!q) {
+        return res.status(400).json({ status: false, error: 'Parameter q diperlukan.' });
+    }
+    try {
+        const results = await pinterest2(q);
+        res.json({
+            status: true,
+            result: results
+        });
+    } catch (error) {
+        console.error('Pinterest error:', error);
+        res.status(500).json({ status: false, error: error.message });
+    }
+});
+
+// ==================== API ENDPOINTS ====================
+app.get('/waifu', async (req, res) => {
+  try {
+    const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
+    const buffer = await getBuffer(data.url);
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  } catch (error) {
+    await sendErrorToTelegram(error);
+    res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
+app.get('/nsfw', async (req, res) => {
+  try {
+    const types = ["blowjob", "neko", "trap", "waifu"];
+    const randomType = types[Math.floor(Math.random() * types.length)];
+    const data = await fetchJson(`https://api.waifu.pics/nsfw/${randomType}`);
+    const buffer = await getBuffer(data.url);
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  } catch (error) {
+    await sendErrorToTelegram(error);
+    res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
+app.get('/api/status', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    version: config.VERSI_WEB, 
+    developer: config.DEVELOPER,
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
+});
+
+// ==================== WEBZIP ====================
 app.get('/webzip', async (req, res) => {
     const url = req.query.url;
     if (!url) return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
@@ -787,6 +848,20 @@ body {
       <div id="bratResponse" class="response-container"></div>
     </div>
 
+<!-- PINTEREST -->
+<div class="api-endpoint">
+  <div class="api-header">
+    <span class="method">GET</span><span class="url">/pinterest?q=</span>
+    <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
+  </div>
+  <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
+  <div class="input-group">
+    <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
+    <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
+  </div>
+  <div id="pinterestResponse" class="response-container"></div>
+</div>
+
     <!-- BRATVID -->
     <div class="api-endpoint">
       <div class="api-header">
@@ -867,6 +942,55 @@ slider.addEventListener('touchend',e=>{if(!isSwiping)return;isSwiping=false;cons
 ['mousedown','mousemove','mouseup','mouseleave'].forEach(ev=>slider.addEventListener(ev,e=>{e.preventDefault();}));
 }
 startSlider(); setupSlider();
+
+// ==================== PINTEREST ====================
+async function testPinterest() {
+  const query = document.getElementById('pinterestQuery').value.trim();
+  if (!query) return alert('Masukkan kata kunci!');
+  const respDiv = document.getElementById('pinterestResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = `${config.URL}/pinterest?q=${encodeURIComponent(query)}`;
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    const status = res.status;
+    const jsonStr = JSON.stringify(data, null, 2);
+    if (data.status) {
+      let html = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge success">200 OK</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+        <p>Ditemukan ${data.result.length} hasil.</p>
+      `;
+      if (data.result.length > 0) {
+        html += '<div style="display: flex; flex-wrap: wrap; gap: 5px;">';
+        data.result.slice(0, 5).forEach(item => {
+          if (item.images_url) {
+            html += `<img src="${item.images_url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px;">`;
+          }
+        });
+        html += '</div>';
+      }
+      html += `<pre>${jsonStr}</pre>`;
+      respDiv.innerHTML = html;
+      respDiv.classList.add('success');
+    } else {
+      respDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge error">${status}</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+        <pre>${jsonStr}</pre>
+      `;
+      respDiv.classList.add('error');
+    }
+  } catch (err) {
+    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.classList.add('error');
+  }
+}
 
 // ==================== WAIFU ====================
 async function testWaifu() {
