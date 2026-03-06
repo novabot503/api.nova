@@ -154,7 +154,7 @@ app.get('/', (req, res) => {
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>NovaBot API</title>
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
@@ -169,11 +169,14 @@ app.get('/', (req, res) => {
   --bg-main: #02040a;
   --bg-card: #0b0f19;
   --primary: #3a6df0;
+  --primary-light: #5b8cff;
   --accent-red: #ff3b30;
   --accent-gold: #ffcc00;
   --text-main: #ffffff;
   --text-sub: #8b9bb4;
   --border-color: #1c2538;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 body {
@@ -345,72 +348,161 @@ body {
   margin-bottom: 30px;
 }
 .api-card h3 { font-family: 'Orbitron'; margin-bottom: 15px; color: var(--primary); }
+
+/* Tampilan endpoint lebih modern */
 .api-endpoint {
-  background: rgba(0,0,0,0.3);
-  border-radius: 10px;
-  padding: 15px;
-  margin-bottom: 10px;
-  border-left: 4px solid var(--primary);
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.api-endpoint:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(58, 109, 240, 0.3);
+  border-color: var(--primary);
+}
+.api-endpoint::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(to bottom, var(--primary), var(--primary-light));
+  border-radius: 4px 0 0 4px;
 }
 .api-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
-.api-header .method { color: var(--accent-gold); font-weight: bold; }
-.api-header .url { color: #00ff88; word-break: break-all; flex: 1; }
+.api-header .method {
+  background: rgba(255, 204, 0, 0.2);
+  color: var(--accent-gold);
+  font-weight: bold;
+  padding: 4px 12px;
+  border-radius: 30px;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 204, 0, 0.4);
+}
+.api-header .url {
+  color: #00ff88;
+  word-break: break-all;
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  background: rgba(0, 255, 136, 0.1);
+  padding: 4px 12px;
+  border-radius: 30px;
+  flex: 1;
+}
 .copy-btn {
   background: transparent;
   border: 1px solid var(--primary);
   color: var(--primary);
-  padding: 4px 12px;
-  border-radius: 5px;
+  padding: 6px 16px;
+  border-radius: 30px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  transition: 0.2s;
+  gap: 6px;
+  transition: all 0.2s;
+  font-weight: 600;
 }
-.copy-btn:hover { background: var(--primary); color: #000; }
-.api-desc { color: var(--text-sub); font-size: 14px; margin-bottom: 10px; }
-.test-btn {
+.copy-btn:hover {
   background: var(--primary);
   color: #000;
+  box-shadow: 0 0 15px var(--primary);
+}
+.api-desc {
+  color: var(--text-sub);
+  font-size: 14px;
+  margin-bottom: 15px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255,255,255,0.1);
+}
+.test-btn {
+  background: linear-gradient(90deg, var(--primary), var(--primary-light));
+  color: #000;
   border: none;
-  padding: 6px 12px;
-  border-radius: 5px;
-  font-size: 12px;
+  padding: 8px 20px;
+  border-radius: 30px;
+  font-size: 14px;
   font-weight: bold;
   cursor: pointer;
-  margin-right: 10px;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 10px rgba(58, 109, 240, 0.3);
 }
+.test-btn:hover {
+  filter: brightness(1.1);
+  transform: scale(1.02);
+  box-shadow: 0 6px 15px rgba(58, 109, 240, 0.5);
+}
+.test-btn i { font-size: 12px; }
 .test-result {
-  margin-top: 10px;
-  padding: 10px;
-  background: rgba(0,0,0,0.2);
-  border-radius: 5px;
-  max-height: 200px;
+  margin-top: 15px;
+  padding: 15px;
+  background: rgba(0,0,0,0.4);
+  border-radius: 12px;
+  max-height: 250px;
   overflow: auto;
+  border: 1px solid var(--border-color);
+  transition: all 0.2s;
 }
 .test-result.success { border-left: 4px solid #00ff88; }
 .test-result.error { border-left: 4px solid var(--accent-red); }
 .test-result .status-code {
   font-size: 12px;
-  margin-bottom: 5px;
+  margin-bottom: 8px;
 }
 .status-code .badge {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 4px 12px;
+  border-radius: 30px;
   font-weight: bold;
+  font-size: 12px;
 }
 .badge.success { background: #00ff88; color: #000; }
 .badge.error { background: var(--accent-red); color: #fff; }
-.test-result img { max-width: 100%; max-height: 150px; border-radius: 5px; }
-.test-result pre { white-space: pre-wrap; word-wrap: break-word; }
+.test-result img { max-width: 100%; max-height: 150px; border-radius: 8px; }
+.test-result pre { white-space: pre-wrap; word-wrap: break-word; font-size: 12px; color: #ccc; }
+
+/* Input untuk webzip */
+.webzip-input {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+.webzip-input input {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 30px;
+  border: 1px solid var(--border-color);
+  background: var(--glass-bg);
+  color: #fff;
+  font-size: 14px;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+.webzip-input input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 10px rgba(58, 109, 240, 0.3);
+}
+.webzip-input input::placeholder { color: var(--text-sub); }
 
 .footer {
   text-align: center;
@@ -484,7 +576,7 @@ body {
         <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Mengembalikan gambar waifu random (format PNG)</div>
-      <button class="test-btn" onclick="testEndpoint('${config.URL}/waifu', 'waifuResult')">▶ Start</button>
+      <button class="test-btn" onclick="testEndpoint('${config.URL}/waifu', 'waifuResult')"><i class="fas fa-play"></i> Start</button>
       <div id="waifuResult" class="test-result"></div>
     </div>
 
@@ -496,9 +588,9 @@ body {
         <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
       </div>
       <div class="api-desc">Mengarsipkan website (menjadi ZIP). Parameter ?url= diisi URL target.</div>
-      <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
-        <input type="text" id="webzipUrl" placeholder="https://contoh.com" style="flex: 1; padding: 8px; border-radius: 5px; border: 1px solid var(--border-color); background: var(--bg-card); color: #fff;">
-        <button class="test-btn" onclick="testWebzip()">▶ Start</button>
+      <div class="webzip-input">
+        <input type="text" id="webzipUrl" placeholder="https://contoh.com">
+        <button class="test-btn" onclick="testWebzip()"><i class="fas fa-play"></i> Start</button>
       </div>
       <div id="webzipResult" class="test-result"></div>
     </div>
