@@ -151,7 +151,6 @@ app.get('/pinterest', async (req, res) => {
         });
     } catch (error) {
         console.error('Pinterest error:', error);
-        // Tampilkan detail error untuk debugging (hapus di production jika perlu)
         res.status(500).json({ status: false, error: error.message, stack: error.stack });
     }
 });
@@ -952,7 +951,7 @@ async function testPinterest() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = `${config.URL}/pinterest?q=${encodeURIComponent(query)}`;
+    const apiUrl = '${config.URL}' + '/pinterest?q=' + encodeURIComponent(query);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -999,7 +998,7 @@ async function testWaifu() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${config.URL}/waifu');
+    const res = await fetch('${config.URL}' + '/waifu');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1019,7 +1018,7 @@ async function testNsfw() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${config.URL}/nsfw');
+    const res = await fetch('${config.URL}' + '/nsfw');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1041,7 +1040,7 @@ async function testWebzip() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = \`${config.URL}/webzip?url=\${encodeURIComponent(urlInput)}\`;
+    const apiUrl = '${config.URL}' + '/webzip?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1068,7 +1067,7 @@ async function testTiktok() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = \`${config.URL}/tiktok?url=\${encodeURIComponent(urlInput)}\`;
+    const apiUrl = '${config.URL}' + '/tiktok?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1115,7 +1114,7 @@ async function testBrat() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = \`${config.URL}/brat?text=\${encodeURIComponent(textInput)}\`;
+    const apiUrl = '${config.URL}' + '/brat?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1143,7 +1142,7 @@ async function testBratvid() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = \`${config.URL}/bratvid?text=\${encodeURIComponent(textInput)}\`;
+    const apiUrl = '${config.URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
