@@ -312,35 +312,22 @@ body {
 .status-panel.show { transform: translateX(0); }
 .status-panel h3 { font-family: 'Orbitron'; color: #5b8cff; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
 
-/* WAVE IMPROVED */
+/* WAVE CONTAINER */
 .wave-container {
-  position: relative; width: 100%; height: 80px; margin: 20px 0;
-  background: #0b0e18; border-radius: 12px; overflow: hidden;
+  position: relative; width: 100%; height: 40px;
+  background: #0b0e18; border-radius: 8px; overflow: hidden;
   border: 1px solid #1f2a40;
 }
 .wave-group {
   position: absolute; width: 100%; height: 100%;
-  background: linear-gradient(90deg, transparent, transparent 20%, #3a6df0 20%, #3a6df0 40%, transparent 40%, transparent 60%, #5b8cff 60%, #5b8cff 80%, transparent 80%);
-  background-size: 250% 100%;
-  animation: waveMove 10s linear infinite;
-  opacity: 0.15;
-}
-.wave-group:nth-child(2) {
-  background: linear-gradient(90deg, transparent, transparent 30%, #00ff88 30%, #00ff88 50%, transparent 50%, transparent 70%, #3a6df0 70%, #3a6df0 90%, transparent 90%);
-  background-size: 300% 100%;
-  animation: waveMove 14s linear infinite reverse;
-  opacity: 0.1;
-}
-.wave-group:nth-child(3) {
-  background: linear-gradient(90deg, transparent, transparent 10%, #ffcc00 10%, #ffcc00 25%, transparent 25%, transparent 40%, #5b8cff 40%, #5b8cff 55%, transparent 55%);
   background-size: 200% 100%;
   animation: waveMove 8s linear infinite;
-  opacity: 0.08;
+  opacity: 0.2;
 }
 @keyframes waveMove { 0% { background-position: 0 0; } 100% { background-position: 200% 0; } }
 
 .status-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;
 }
 .status-item {
   background: #1a1f30; border-radius: 8px; padding: 10px;
@@ -488,9 +475,47 @@ body {
 
 <div class="status-panel" id="statusPanel">
   <h3><i class="fas fa-chart-line"></i> SERVER STATUS</h3>
-  <div class="wave-container">
-    <div class="wave-group"></div><div class="wave-group"></div><div class="wave-group"></div>
+  
+  <!-- CPU Load -->
+  <div style="margin-bottom: 12px;">
+    <div style="display: flex; justify-content: space-between; color: #8a9bb0; font-size: 12px; margin-bottom: 4px;">
+      <span>CPU Load</span>
+      <span id="cpuValue">0.0%</span>
+    </div>
+    <div class="wave-container">
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 20%, #3a6df0 20%, #3a6df0 40%, transparent 40%, transparent 60%, #5b8cff 60%, #5b8cff 80%, transparent 80%); animation-duration: 8s;"></div>
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 30%, #00ff88 30%, #00ff88 50%, transparent 50%, transparent 70%, #3a6df0 70%, #3a6df0 90%, transparent 90%); animation-duration: 12s; animation-direction: reverse;"></div>
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 10%, #ffcc00 10%, #ffcc00 25%, transparent 25%, transparent 40%, #5b8cff 40%, #5b8cff 55%, transparent 55%); animation-duration: 6s;"></div>
+    </div>
   </div>
+
+  <!-- Memory -->
+  <div style="margin-bottom: 12px;">
+    <div style="display: flex; justify-content: space-between; color: #8a9bb0; font-size: 12px; margin-bottom: 4px;">
+      <span>Memory</span>
+      <span id="memValue">0 MiB</span>
+    </div>
+    <div class="wave-container">
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 20%, #f97316 20%, #f97316 40%, transparent 40%, transparent 60%, #fb923c 60%, #fb923c 80%, transparent 80%); animation-duration: 7s;"></div>
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 30%, #22c55e 30%, #22c55e 50%, transparent 50%, transparent 70%, #4ade80 70%, #4ade80 90%, transparent 90%); animation-duration: 11s; animation-direction: reverse;"></div>
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 10%, #eab308 10%, #eab308 25%, transparent 25%, transparent 40%, #facc15 40%, #facc15 55%, transparent 55%); animation-duration: 5s;"></div>
+    </div>
+  </div>
+
+  <!-- Network -->
+  <div style="margin-bottom: 15px;">
+    <div style="display: flex; justify-content: space-between; color: #8a9bb0; font-size: 12px; margin-bottom: 4px;">
+      <span>Network</span>
+      <span id="netValue">0 B/s</span>
+    </div>
+    <div class="wave-container">
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 20%, #a855f7 20%, #a855f7 40%, transparent 40%, transparent 60%, #c084fc 60%, #c084fc 80%, transparent 80%); animation-duration: 9s;"></div>
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 30%, #ec4899 30%, #ec4899 50%, transparent 50%, transparent 70%, #f472b6 70%, #f472b6 90%, transparent 90%); animation-duration: 13s; animation-direction: reverse;"></div>
+      <div class="wave-group" style="background: linear-gradient(90deg, transparent, transparent 10%, #06b6d4 10%, #06b6d4 25%, transparent 25%, transparent 40%, #22d3ee 40%, #22d3ee 55%, transparent 55%); animation-duration: 7s;"></div>
+    </div>
+  </div>
+
+  <!-- Status Info Grid -->
   <div id="statusContent" class="status-grid">Memuat...</div>
 </div>
 
@@ -615,6 +640,16 @@ function formatUptime(s) {
   return \`\${d}d \${h}h \${m}m \${sec}s\`;
 }
 loadStatus(); setInterval(loadStatus, 30000);
+
+// Simulasi nilai CPU, Memory, Network (update setiap 2 detik)
+setInterval(() => {
+  const cpu = (Math.random() * 30).toFixed(1) + '%';
+  const mem = Math.floor(Math.random() * 400) + ' MiB';
+  const net = Math.floor(Math.random() * 500) + ' B/s';
+  document.getElementById('cpuValue').innerText = cpu;
+  document.getElementById('memValue').innerText = mem;
+  document.getElementById('netValue').innerText = net;
+}, 2000);
 
 // ==================== SLIDER ====================
 let slideIdx=0, slideInt;
