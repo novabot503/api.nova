@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const cloudscraper = require('cloudscraper');
+const { createCanvas } = require('canvas');
 const config = require('./setting.js');
 
 const app = express();
@@ -178,16 +179,12 @@ app.get('/tiktok', async (req, res) => {
         if (!data) {
             return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
         }
-
-        // Format angka (K/M)
         const formatNumber = (num) => {
             if (!num) return 0;
             if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
             if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
             return num.toString();
         };
-
-        // Durasi dalam format mm:ss
         const duration = data.duration ? Math.floor(data.duration / 60) + ':' + (data.duration % 60).toString().padStart(2, '0') : 'N/A';
 
         res.json({
@@ -198,7 +195,6 @@ app.get('/tiktok', async (req, res) => {
                 title: data.title || 'Tidak ada judul',
                 author: data.author?.nickname || 'Unknown',
                 author_username: data.author?.unique_id || '',
-                thumbnail: data.origin_cover || data.cover || '',
                 duration: duration,
                 duration_seconds: data.duration || 0,
                 play_count: formatNumber(data.play_count),
@@ -212,6 +208,82 @@ app.get('/tiktok', async (req, res) => {
     } catch (error) {
         console.error('TikTok error:', error);
         res.status(500).json({ status: false, error: 'Gagal memproses permintaan.' });
+    }
+});
+
+// ==================== BRAT TEXT GENERATOR ====================
+app.get('/brat', async (req, res) => {
+    const text = req.query.text;
+    if (!text) {
+        return res.status(400).json({ status: 400, message: 'Masukkan parameter text.' });
+    }
+
+    try {
+        const width = 370;
+        const height = 390;
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+
+        // background putih
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        // Fungsi untuk mengukur teks
+        const getTextWidth = (txt, fontSize) => {
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            return ctx.measureText(txt).width;
+        };
+
+        // Cari ukuran font yang pas
+        let fontSize = 120;
+        let lines = [];
+        const margin = 10;
+        const maxWidth = width - margin * 2;
+        const maxHeight = height - margin * 2;
+        let lineHeight = 0;
+
+        while (fontSize > 10) {
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            lineHeight = fontSize * 1.2;
+
+            lines = [];
+            let line = '';
+            const words = text.split(' ');
+
+            for (let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const testWidth = ctx.measureText(testLine).width;
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line.trim());
+                    line = words[n] + ' ';
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line.trim());
+
+            const totalHeight = lines.length * lineHeight;
+            if (totalHeight <= maxHeight) break;
+            fontSize -= 2;
+        }
+
+        // Tulis teks rata tengah
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        const totalHeight = lines.length * lineHeight;
+        let y = (height - totalHeight) / 2;
+
+        for (const line of lines) {
+            ctx.fillText(line, width / 2, y);
+            y += lineHeight;
+        }
+
+        res.set('Content-Type', 'image/png');
+        res.send(canvas.toBuffer('image/png'));
+    } catch (err) {
+        res.status(500).json({ status: 500, message: 'Terjadi kesalahan saat membuat gambar.', error: err.message });
     }
 });
 
@@ -495,6 +567,20 @@ body {
       </div>
       <div id="tiktokResponse" class="response-container"></div>
     </div>
+
+    <!-- BRAT -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/brat?text=</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
+      </div>
+      <div class="api-desc">Buat gambar teks ala brat. Parameter ?text=</div>
+      <div class="input-group">
+        <input type="text" id="bratText" placeholder="Masukkan teks">
+        <button class="start-btn" onclick="testBrat()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="bratResponse" class="response-container"></div>
+    </div>
   </div>
 
   <div class="footer">
@@ -641,6 +727,33 @@ async function testTiktok() {
     }
   } catch (err) {
     respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
+  }
+}
+
+// ==================== BRAT ====================
+async function testBrat() {
+  const textInput = document.getElementById('bratText').value.trim();
+  if (!textInput) return alert('Masukkan teks!');
+  const respDiv = document.getElementById('bratResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = \`${config.URL}/brat?text=\${encodeURIComponent(textInput)}\`;
+    const res = await fetch(apiUrl);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Gagal');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    respDiv.innerHTML = \`
+      <div class="badge success">200 OK</div>
+      <img src="\${url}" alt="Brat Image" style="max-width:100%;">
+    \`;
+    respDiv.classList.add('success');
+  } catch (err) {
+    respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
 }
