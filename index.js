@@ -211,15 +211,17 @@ app.get('/tiktok', async (req, res) => {
     }
 });
 
-// ==================== BRAT TEXT GENERATOR (DIPERBAIKI) ====================
+// ==================== BRAT TEXT GENERATOR (MURNI CANVAS) ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
+    const download = req.query.download === 'true'; // if true, force download
+
     if (!text) {
         return res.status(400).json({ status: 400, message: 'Masukkan parameter text.' });
     }
 
     try {
-        // Ukuran canvas lebih besar agar teks panjang muat
+        // Ukuran canvas 600x400
         const width = 600;
         const height = 400;
         const canvas = createCanvas(width, height);
@@ -229,10 +231,9 @@ app.get('/brat', async (req, res) => {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        // Font stack yang aman (Impact / Arial Black)
+        // Font stack aman (tidak bergantung font website)
         const fontFamily = '"Impact", "Arial Black", "Helvetica Bold", "sans-serif"';
 
-        // Margin
         const margin = 20;
         const maxWidth = width - margin * 2;
         const maxHeight = height - margin * 2;
@@ -246,7 +247,6 @@ app.get('/brat', async (req, res) => {
             ctx.font = `bold ${fontSize}px ${fontFamily}`;
             lineHeight = fontSize * 1.2;
 
-            // Bagi teks menjadi baris
             lines = [];
             let line = '';
             const words = text.split(' ');
@@ -268,7 +268,7 @@ app.get('/brat', async (req, res) => {
             fontSize -= 2;
         }
 
-        // Gambar teks
+        // Gambar teks hitam
         ctx.fillStyle = '#000000';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -281,8 +281,14 @@ app.get('/brat', async (req, res) => {
             y += lineHeight;
         }
 
-        res.set('Content-Type', 'image/png');
-        res.send(canvas.toBuffer('image/png'));
+        const buffer = canvas.toBuffer('image/png');
+
+        if (download) {
+            res.setHeader('Content-Disposition', 'attachment; filename="brat.png"');
+        }
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', buffer.length);
+        res.send(buffer);
     } catch (err) {
         console.error('Brat error:', err);
         res.status(500).json({ status: 500, message: 'Terjadi kesalahan saat membuat gambar.', error: err.message });
@@ -478,6 +484,7 @@ body {
   margin: 0 auto;
   object-fit: contain;
   border-radius: 8px;
+  border: 2px solid #2a3a60;
 }
 .response-container video {
   max-width: 100%; max-height: 300px; border-radius: 8px; display: block; margin: 10px auto;
@@ -500,6 +507,14 @@ body {
   display: inline-flex; align-items: center; gap: 4px;
 }
 .copy-json-btn:hover { background: #3a4a70; }
+
+/* DOWNLOAD BUTTON */
+.download-btn {
+  background: #3a6df0; color: #fff; border: none; padding: 4px 10px;
+  border-radius: 30px; font-size: 11px; cursor: pointer; margin-left: 8px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.download-btn:hover { background: #2a5ac0; }
 
 /* FOOTER */
 .footer {
@@ -583,7 +598,7 @@ body {
         <span class="method">GET</span><span class="url">/brat?text=</span>
         <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
       </div>
-      <div class="api-desc">Buat gambar teks ala brat. Parameter ?text=</div>
+      <div class="api-desc">Buat gambar teks ala brat (pure PNG). Parameter ?text=</div>
       <div class="input-group">
         <input type="text" id="bratText" placeholder="Masukkan teks">
         <button class="start-btn" onclick="testBrat()"><i class="fas fa-play"></i> Start</button>
@@ -740,7 +755,7 @@ async function testTiktok() {
   }
 }
 
-// ==================== BRAT (DIPERBAIKI) ====================
+// ==================== BRAT (PURE CANVAS + DOWNLOAD) ====================
 async function testBrat() {
   const textInput = document.getElementById('bratText').value.trim();
   if (!textInput) return alert('Masukkan teks!');
@@ -756,8 +771,12 @@ async function testBrat() {
     }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
+    // Tambahkan tombol download
     respDiv.innerHTML = \`
-      <div class="badge success">200 OK</div>
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <div class="badge success">200 OK</div>
+        <button class="download-btn" onclick="downloadBratImage('\${url}')"><i class="fas fa-download"></i> Download PNG</button>
+      </div>
       <img src="\${url}" alt="Brat Image">
     \`;
     respDiv.classList.add('success');
@@ -766,6 +785,16 @@ async function testBrat() {
     respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
+}
+
+// Fungsi untuk mendownload gambar Brat
+function downloadBratImage(imageUrl) {
+  const a = document.createElement('a');
+  a.href = imageUrl;
+  a.download = 'brat.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // ==================== COPY TEXT ====================
