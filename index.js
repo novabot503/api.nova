@@ -277,6 +277,8 @@ body {
   color: #fff;
   min-height: 100vh;
   padding-bottom: 40px;
+  position: relative;
+  overflow-x: hidden;
 }
 /* HEADER */
 .custom-header {
@@ -292,49 +294,85 @@ body {
   border-radius: 8px; transition: 0.2s;
 }
 .menu-btn:hover { background: #1f2a40; }
-.menu-btn span { width: 22px; height: 2px; background: #fff; border-radius: 2px; transition: 0.3s; }
+.menu-btn span {
+  width: 22px; height: 2px; background: #fff; border-radius: 2px;
+  transition: 0.3s;
+}
 .menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(6px, 6px); }
 .menu-btn.active span:nth-child(2) { opacity: 0; }
 .menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(6px, -6px); }
 
-/* PAGE CONTAINER */
-.page-container { padding: 20px; transition: 0.3s; }
-.page-container.blur { filter: blur(3px); pointer-events: none; }
-
-/* STATUS PANEL */
+/* STATUS PANEL (SLIDE DOWN) */
 .status-panel {
-  position: fixed; top: 70px; right: 20px; width: 300px;
-  background: #0f1320; border: 1px solid #2a3a60; border-radius: 16px;
-  padding: 20px; z-index: 200; box-shadow: 0 10px 30px rgba(0,0,0,0.7);
-  transform: translateX(120%); transition: transform 0.3s ease;
+  position: fixed;
+  top: -100%;
+  left: 0;
+  width: 100%;
+  background: #0f1320;
+  border-bottom: 2px solid #2a3a60;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.7);
+  z-index: 99;
+  transition: top 0.4s ease;
+  padding: 70px 20px 20px 20px;
   backdrop-filter: blur(8px);
 }
-.status-panel.show { transform: translateX(0); }
-.status-panel h3 { font-family: 'Orbitron'; color: #5b8cff; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
+.status-panel.show { top: 0; }
+.status-panel h3 {
+  font-family: 'Orbitron';
+  color: #5b8cff;
+  margin-bottom: 20px;
+  font-size: 24px;
+  text-align: center;
+}
 
 /* WAVE CONTAINER */
+.metric-row {
+  margin-bottom: 20px;
+}
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  color: #8a9bb0;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
 .wave-container {
-  position: relative; width: 100%; height: 40px;
-  background: #0b0e18; border-radius: 8px; overflow: hidden;
+  position: relative;
+  width: 100%;
+  height: 60px;
+  background: #0b0e18;
+  border-radius: 8px;
+  overflow: hidden;
   border: 1px solid #1f2a40;
 }
 .wave-group {
-  position: absolute; width: 100%; height: 100%;
+  position: absolute;
+  width: 100%;
+  height: 100%;
   background-size: 200% 100%;
   animation: waveMove 8s linear infinite;
-  opacity: 0.2;
+  opacity: 0.25;
 }
 @keyframes waveMove { 0% { background-position: 0 0; } 100% { background-position: 200% 0; } }
 
 .status-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-top: 25px;
 }
 .status-item {
-  background: #1a1f30; border-radius: 8px; padding: 10px;
+  background: #1a1f30;
+  border-radius: 8px;
+  padding: 12px;
   border-left: 3px solid #3a6df0;
 }
-.status-item .label { color: #8a9bb0; font-size: 10px; text-transform: uppercase; }
-.status-item .value { color: #fff; font-size: 14px; font-weight: bold; font-family: 'VT323'; }
+.status-item .label { color: #8a9bb0; font-size: 12px; text-transform: uppercase; }
+.status-item .value { color: #fff; font-size: 18px; font-weight: bold; font-family: 'VT323'; }
+
+/* PAGE CONTAINER */
+.page-container { padding: 20px; transition: filter 0.3s; }
+.page-container.blur { filter: blur(3px); pointer-events: none; }
 
 /* HEADER CARD */
 .lux-header-card {
@@ -411,7 +449,7 @@ body {
 }
 .input-group input:focus { outline: none; border-color: #5b8cff; }
 
-/* RESPONSE CONTAINER (UNTUK GAMBAR DAN JSON) */
+/* RESPONSE CONTAINER */
 .response-container {
   margin-top: 15px; padding: 12px; background: #1a1f30; border-radius: 8px;
   border-left: 4px solid #5b8cff; display: none; max-height: 500px; overflow: auto;
@@ -470,15 +508,18 @@ body {
 <body>
 <div class="custom-header">
   <div class="header-title">NOVABOT API</div>
-  <div class="menu-btn" id="menuBtn"><span></span><span></span><span></span></div>
+  <div class="menu-btn" id="menuBtn">
+    <span></span><span></span><span></span>
+  </div>
 </div>
 
+<!-- STATUS PANEL (SLIDE DOWN) -->
 <div class="status-panel" id="statusPanel">
   <h3><i class="fas fa-chart-line"></i> SERVER STATUS</h3>
   
   <!-- CPU Load -->
-  <div style="margin-bottom: 12px;">
-    <div style="display: flex; justify-content: space-between; color: #8a9bb0; font-size: 12px; margin-bottom: 4px;">
+  <div class="metric-row">
+    <div class="metric-header">
       <span>CPU Load</span>
       <span id="cpuValue">0.0%</span>
     </div>
@@ -490,8 +531,8 @@ body {
   </div>
 
   <!-- Memory -->
-  <div style="margin-bottom: 12px;">
-    <div style="display: flex; justify-content: space-between; color: #8a9bb0; font-size: 12px; margin-bottom: 4px;">
+  <div class="metric-row">
+    <div class="metric-header">
       <span>Memory</span>
       <span id="memValue">0 MiB</span>
     </div>
@@ -503,8 +544,8 @@ body {
   </div>
 
   <!-- Network -->
-  <div style="margin-bottom: 15px;">
-    <div style="display: flex; justify-content: space-between; color: #8a9bb0; font-size: 12px; margin-bottom: 4px;">
+  <div class="metric-row">
+    <div class="metric-header">
       <span>Network</span>
       <span id="netValue">0 B/s</span>
     </div>
@@ -609,11 +650,10 @@ body {
 </div>
 
 <script>
-// ==================== STATUS ====================
+// ==================== STATUS PANEL TOGGLE ====================
 const menuBtn = document.getElementById('menuBtn');
 const statusPanel = document.getElementById('statusPanel');
 const pageContainer = document.getElementById('pageContainer');
-const statusContent = document.getElementById('statusContent');
 
 menuBtn.addEventListener('click', () => {
   menuBtn.classList.toggle('active');
@@ -621,6 +661,8 @@ menuBtn.addEventListener('click', () => {
   pageContainer.classList.toggle('blur');
 });
 
+// ==================== LOAD STATUS INFO ====================
+const statusContent = document.getElementById('statusContent');
 async function loadStatus() {
   try {
     const res = await fetch('/api/status');
@@ -639,9 +681,10 @@ function formatUptime(s) {
   const d=Math.floor(s/86400), h=Math.floor((s%86400)/3600), m=Math.floor((s%3600)/60), sec=Math.floor(s%60);
   return \`\${d}d \${h}h \${m}m \${sec}s\`;
 }
-loadStatus(); setInterval(loadStatus, 30000);
+loadStatus();
+setInterval(loadStatus, 30000);
 
-// Simulasi nilai CPU, Memory, Network (update setiap 2 detik)
+// ==================== SIMULASI NILAI CPU, MEMORY, NETWORK ====================
 setInterval(() => {
   const cpu = (Math.random() * 30).toFixed(1) + '%';
   const mem = Math.floor(Math.random() * 400) + ' MiB';
