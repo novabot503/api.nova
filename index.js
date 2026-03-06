@@ -147,7 +147,7 @@ app.get('/webzip', async (req, res) => {
     }
 });
 
-// ==================== TIKTOK ENDPOINT (LENGKAP) ====================
+// ==================== TIKTOK ENDPOINT (SEDERHANA) ====================
 app.get('/tiktok', async (req, res) => {
     const url = req.query.url;
     if (!url || !url.includes('tiktok.com')) {
@@ -170,7 +170,7 @@ app.get('/tiktok', async (req, res) => {
                 count: 12,
                 cursor: 0,
                 web: 1,
-                hd: 1
+                hd: 0 // nonaktifkan HD
             }
         });
 
@@ -179,33 +179,17 @@ app.get('/tiktok', async (req, res) => {
             return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
         }
 
-        // Helper format angka
-        const formatNumber = (num) => {
-            if (!num) return 0;
-            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-            return num.toString();
-        };
-
-        const duration = data.duration ? Math.floor(data.duration / 60) + ':' + (data.duration % 60).toString().padStart(2, '0') : 'N/A';
+        // Gunakan video tanpa watermark (play) sebagai default
+        const videoUrl = data.play ? 'https://www.tikwm.com' + data.play : null;
+        const audioUrl = data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null);
 
         res.json({
             status: true,
             result: {
+                video: videoUrl,
+                audio: audioUrl,
                 title: data.title || 'Tidak ada judul',
-                author: data.author?.nickname || 'Unknown',
-                author_username: data.author?.unique_id || '',
-                thumbnail: data.origin_cover || data.cover || '',
-                video_hd: data.hdplay ? 'https://www.tikwm.com' + data.hdplay : null,
-                video_sd: data.play ? 'https://www.tikwm.com' + data.play : null,
-                audio: data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null),
-                duration: duration,
-                duration_seconds: data.duration || 0,
-                play_count: formatNumber(data.play_count),
-                like_count: formatNumber(data.digg_count),
-                comment_count: formatNumber(data.comment_count),
-                share_count: formatNumber(data.share_count),
-                download_count: formatNumber(data.download_count)
+                author: data.author?.nickname || 'Unknown'
             }
         });
 
@@ -598,7 +582,7 @@ async function testWebzip() {
   }
 }
 
-// ==================== TIKTOK (lengkap + tombol copy JSON) ====================
+// ==================== TIKTOK (sederhana + tombol copy JSON) ====================
 async function testTiktok() {
   const urlInput = document.getElementById('tiktokUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL TikTok!');
@@ -620,12 +604,8 @@ async function testTiktok() {
         </div>
       \`;
       html += \`<p><strong>Judul:</strong> \${r.title}</p>\`;
-      html += \`<p><strong>Author:</strong> \${r.author} (@\${r.author_username})</p>\`;
-      if (r.thumbnail) html += \`<img src="\${r.thumbnail}" style="max-width:100%; max-height:150px; border-radius:8px; margin-bottom:10px;">\`;
-      html += \`<p><strong>Durasi:</strong> \${r.duration} (detik: \${r.duration_seconds})</p>\`;
-      html += \`<p><strong>👍 Likes:</strong> \${r.like_count} • <strong>💬 Komentar:</strong> \${r.comment_count} • <strong>🔄 Dibagikan:</strong> \${r.share_count} • <strong>📥 Download:</strong> \${r.download_count}</p>\`;
-      if (r.video_hd) html += \`<video src="\${r.video_hd}" controls style="max-width:100%; margin-top:10px;"></video><p><a href="\${r.video_hd}" target="_blank">Download Video HD</a></p>\`;
-      if (r.video_sd && !r.video_hd) html += \`<video src="\${r.video_sd}" controls style="max-width:100%;"></video>\`;
+      html += \`<p><strong>Author:</strong> \${r.author}</p>\`;
+      if (r.video) html += \`<video src="\${r.video}" controls style="max-width:100%;"></video>\`;
       if (r.audio) html += \`<p><strong>Audio:</strong> <a href="\${r.audio}" target="_blank">Download Audio</a></p>\`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
@@ -648,24 +628,9 @@ async function testTiktok() {
 
 // ==================== COPY TEXT ====================
 function copyText(text, label) {
-  // If text is encoded, decode it
   if (label === 'json') text = decodeURIComponent(text);
   navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
 }
-
-// Override copyText for normal link copying
-function copyTextOriginal(text, label) {
-  navigator.clipboard.writeText(text).then(() => alert(\`Link \${label} disalin!\`));
-}
-// We'll keep the original copyText for link buttons, but we already have a global copyText.
-// Rename to avoid conflict.
-window.copyText = function(text, label) {
-  if (label === 'json') text = decodeURIComponent(text);
-  navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
-};
-// For link buttons, we need a separate function. We'll keep the onclick as copyText but pass label.
-// Actually the existing copy buttons call copyText with label 'waifu', 'webzip', 'tiktok', so they are fine.
-// For JSON copy, we call copyText with label 'json', and we decode.
 
 document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('video').forEach(v=>v.play().catch(()=>{}));
