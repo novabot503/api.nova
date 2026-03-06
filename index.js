@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const cloudscraper = require('cloudscraper');
 const config = require('./setting.js');
 
 const app = express();
@@ -62,6 +63,90 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ==================== WEBZIP ENDPOINT ====================
+async function saveweb2zip(url, options = {}) {
+    if (!url) throw new Error('Url is required');
+    url = url.startsWith('https://') ? url : `https://${url}`;
+    const {
+        renameAssets = false,
+        saveStructure = false,
+        alternativeAlgorithm = false,
+        mobileVersion = false
+    } = options;
+
+    let response = await cloudscraper.post('https://copier.saveweb2zip.com/api/copySite', {
+        json: {
+            url,
+            renameAssets,
+            saveStructure,
+            alternativeAlgorithm,
+            mobileVersion
+        },
+        headers: {
+            accept: '*/*',
+            'content-type': 'application/json',
+            origin: 'https://saveweb2zip.com',
+            referer: 'https://saveweb2zip.com/'
+        }
+    });
+
+    const { md5 } = response;
+
+    while (true) {
+        let process = await cloudscraper.get(`https://copier.saveweb2zip.com/api/getStatus/${md5}`, {
+            json: true,
+            headers: {
+                accept: '*/*',
+                'content-type': 'application/json',
+                origin: 'https://saveweb2zip.com',
+                referer: 'https://saveweb2zip.com/'
+            }
+        });
+
+        if (!process.isFinished) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+        } else {
+            return {
+                url,
+                error: {
+                    text: process.errorText,
+                    code: process.errorCode,
+                },
+                copiedFilesAmount: process.copiedFilesAmount,
+                downloadUrl: `https://copier.saveweb2zip.com/api/downloadArchive/${process.md5}`
+            }
+        }
+    }
+}
+
+app.get('/webzip', async (req, res) => {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
+
+    try {
+        const result = await saveweb2zip(url, { renameAssets: true });
+
+        if (result.error?.code) {
+            return res.status(500).json({
+                status: false,
+                error: result.error.text || 'Gagal menyimpan website.'
+            });
+        }
+
+        return res.json({
+            status: true,
+            originalUrl: result.url,
+            copiedFilesAmount: result.copiedFilesAmount,
+            downloadUrl: result.downloadUrl
+        });
+
+    } catch (e) {
+        await sendErrorToTelegram(e);
+        return res.status(500).json({ status: false, error: e.message });
+    }
+});
+
 // ==================== HALAMAN UTAMA ====================
 app.get('/', (req, res) => {
   const html = `
@@ -69,7 +154,7 @@ app.get('/', (req, res) => {
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=0.50, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <title>NovaBot API</title>
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
@@ -325,6 +410,7 @@ body {
 .badge.success { background: #00ff88; color: #000; }
 .badge.error { background: var(--accent-red); color: #fff; }
 .test-result img { max-width: 100%; max-height: 150px; border-radius: 5px; }
+.test-result pre { white-space: pre-wrap; word-wrap: break-word; }
 
 .footer {
   text-align: center;
@@ -398,8 +484,23 @@ body {
         <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Mengembalikan gambar waifu random (format PNG)</div>
-      <button class="test-btn" onclick="testEndpoint('${config.URL}/waifu', 'waifuResult')">🔄 Coba</button>
+      <button class="test-btn" onclick="testEndpoint('${config.URL}/waifu', 'waifuResult')">▶ Start</button>
       <div id="waifuResult" class="test-result"></div>
+    </div>
+
+    <!-- WEBZIP ENDPOINT -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span>
+        <span class="url">/webzip?url=...</span>
+        <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
+      </div>
+      <div class="api-desc">Mengarsipkan website (menjadi ZIP). Parameter ?url= diisi URL target.</div>
+      <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+        <input type="text" id="webzipUrl" placeholder="https://contoh.com" style="flex: 1; padding: 8px; border-radius: 5px; border: 1px solid var(--border-color); background: var(--bg-card); color: #fff;">
+        <button class="test-btn" onclick="testWebzip()">▶ Start</button>
+      </div>
+      <div id="webzipResult" class="test-result"></div>
     </div>
   </div>
 
@@ -489,7 +590,7 @@ function setupSlider() {
   sliderContainer.addEventListener('mouseleave', () => { if (isSwiping) { isSwiping = false; sliderContainer.style.cursor = 'grab'; updateSlider(); startSlider(); } });
 }
 
-// ==================== TEST ENDPOINT ====================
+// ==================== TEST ENDPOINT WAIFU ====================
 async function testEndpoint(url, resultId) {
   const resultDiv = document.getElementById(resultId);
   resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
@@ -515,6 +616,38 @@ async function testEndpoint(url, resultId) {
         <pre>\${text}</pre>
       \`;
     }
+    resultDiv.classList.add(status === 200 ? 'success' : 'error');
+  } catch (err) {
+    resultDiv.innerHTML = \`
+      <div class="status-code"><span class="badge error">Network Error</span></div>
+      <pre>\${err.message}</pre>
+    \`;
+    resultDiv.classList.add('error');
+  }
+}
+
+// ==================== TEST WEBZIP ====================
+async function testWebzip() {
+  const urlInput = document.getElementById('webzipUrl').value.trim();
+  if (!urlInput) {
+    alert('Masukkan URL target!');
+    return;
+  }
+  const resultDiv = document.getElementById('webzipResult');
+  resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  resultDiv.className = 'test-result';
+  
+  try {
+    const apiUrl = \`${config.URL}/webzip?url=\${encodeURIComponent(urlInput)}\`;
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    const status = res.status;
+    const statusText = res.statusText;
+    
+    resultDiv.innerHTML = \`
+      <div class="status-code"><span class="badge \${status === 200 ? 'success' : 'error'}">\${status} \${statusText}</span></div>
+      <pre>\${JSON.stringify(data, null, 2)}</pre>
+    \`;
     resultDiv.classList.add(status === 200 ? 'success' : 'error');
   } catch (err) {
     resultDiv.innerHTML = \`
