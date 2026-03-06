@@ -11,61 +11,42 @@ const HOST = config.HOST || 'localhost';
 app.use(require('cors')());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// HTTPS Agent untuk Pinterest
 const agent = new https.Agent({
-  rejectUnauthorized: true,
-  maxVersion: 'TLSv1.3',
-  minVersion: 'TLSv1.2',
+rejectUnauthorized: true,
+maxVersion: 'TLSv1.3',
+minVersion: 'TLSv1.2',
 });
-
-// ==================== FUNGSI HELPER ====================
 async function fetchJson(url) {
-  const res = await axios.get(url);
-  return res.data;
+const res = await axios.get(url);
+return res.data;
 }
-
 async function getBuffer(url) {
-  const res = await axios.get(url, { responseType: 'arraybuffer' });
-  return Buffer.from(res.data);
+const res = await axios.get(url, { responseType: 'arraybuffer' });
+return Buffer.from(res.data);
 }
-
-// Notifikasi error ke Telegram
 async function sendErrorToTelegram(error) {
-  if (!config.TELEGRAM_TOKEN || !config.OWNER_ID) return;
-  const message = `❌ *API Error*\n\n${error.message}\n\n${error.stack || ''}`;
-  try {
-    await axios.post(`https://api.telegram.org/bot${config.TELEGRAM_TOKEN}/sendMessage`, {
-      chat_id: config.OWNER_ID,
-      text: message,
-      parse_mode: 'Markdown'
-    });
-  } catch (e) {
-    console.error('Gagal kirim ke Telegram:', e.message);
-  }
+if (!config.TELEGRAM_TOKEN || !config.OWNER_ID) return;
+const message = `❌ *API Error*\n\n${error.message}\n\n${error.stack || ''}`;
+try {
+await axios.post(`https://api.telegram.org/bot${config.TELEGRAM_TOKEN}/sendMessage`, {
+chat_id: config.OWNER_ID,
+text: message,
+parse_mode: 'Markdown'
+});
+} catch (e) {
+console.error('Gagal kirim ke Telegram:', e.message);
+}
 }
 
-// ==================== INSTAGRAM HELPER (via akuari.my.id) ====================
-async function ambilDataInstagram(url) {
-  const apiUrl = `https://api.akuari.my.id/downloader/ig?url=${encodeURIComponent(url)}`;
-  try {
-    const response = await axios.get(apiUrl, { timeout: 15000 });
-    return response.data;
-  } catch (error) {
-    console.error('Instagram API error:', error.message);
-    return { status: false, error: 'Gagal mengambil data dari Instagram' };
-  }
-}
-
-// ==================== PINTEREST HELPER ====================
+// ==================== PINTEREST HELPER (BARU) ====================
 async function getCookies() {
-  try {
-    const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent: agent });
-    const setCookieHeaders = response.headers['set-cookie'];
-    if (setCookieHeaders) {
-      const cookies = setCookieHeaders.map(cookieString => cookieString.split(';')[0].trim());
-      return cookies.join('; ');
-    }
+try {
+const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent: agent });
+const setCookieHeaders = response.headers['set-cookie'];
+if (setCookieHeaders) {
+const cookies = setCookieHeaders.map(cookieString => cookieString.split(';')[0].trim());
+return cookies.join('; ');
+}
     return null;
   } catch (error) {
     console.error('Gagal ambil cookie:', error.message);
@@ -138,7 +119,7 @@ async function pinterest(query) {
   }
 }
 
-// ==================== WEBZIP HELPER ====================
+// ==================== WEBZIP ENDPOINT ====================
 async function saveweb2zip(url, options = {}) {
     if (!url) throw new Error('Url is required');
     url = url.startsWith('https://') ? url : `https://${url}`;
@@ -195,62 +176,7 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
-// ==================== TELEGRAM HELPER (via akuari.my.id) ====================
-async function ambilDataTelegram(url) {
-    const apiUrl = `https://api.akuari.my.id/downloader/telegram?url=${encodeURIComponent(url)}`;
-    try {
-        const response = await axios.get(apiUrl, { timeout: 15000 });
-        return response.data;
-    } catch (error) {
-        console.error('Telegram API error:', error.message);
-        return { status: false, error: 'Gagal mengambil data dari Telegram' };
-    }
-}
-
-// ==================== ENDPOINT INSTAGRAM ====================
-app.get('/instagram', async (req, res) => {
-    const { url } = req.query;
-    if (!url || !url.includes('instagram.com')) {
-        return res.status(400).json({ status: false, error: 'URL Instagram tidak valid.' });
-    }
-    try {
-        const result = await ambilDataInstagram(url);
-        if (!result.status) {
-            return res.status(500).json({ status: false, error: result.error || 'Gagal mengambil data' });
-        }
-        // API akuari.my.id mengembalikan { status: true, data: [...] } atau { status: true, result: [...] }
-        const data = result.data || result.result || [];
-        res.json({ status: true, result: data });
-    } catch (error) {
-        console.error('Instagram error:', error);
-        await sendErrorToTelegram(error);
-        res.status(500).json({ status: false, error: error.message });
-    }
-});
-
-// ==================== ENDPOINT TELEGRAM ====================
-app.get('/telegram', async (req, res) => {
-    const { url } = req.query;
-    if (!url || !url.includes('t.me')) {
-        return res.status(400).json({ status: false, error: 'URL Telegram tidak valid.' });
-    }
-    try {
-        const result = await ambilDataTelegram(url);
-        if (!result.status) {
-            return res.status(500).json({ status: false, error: result.error || 'Gagal mengambil data' });
-        }
-        res.json({
-            status: true,
-            result: result.data || result.result
-        });
-    } catch (error) {
-        console.error('Telegram error:', error);
-        await sendErrorToTelegram(error);
-        res.status(500).json({ status: false, error: error.message });
-    }
-});
-
-// ==================== ENDPOINT PINTEREST ====================
+// ==================== PINTEREST ENDPOINT ====================
 app.get('/pinterest', async (req, res) => {
     const { q } = req.query;
     if (!q) {
@@ -258,20 +184,25 @@ app.get('/pinterest', async (req, res) => {
     }
     try {
         const results = await pinterest(q);
-        res.json({ status: true, result: results });
+        res.json({
+            status: true,
+            result: results
+        });
     } catch (error) {
         console.error('Pinterest error:', error);
-        await sendErrorToTelegram(error);
-        res.status(500).json({ status: false, error: error.message });
+        res.status(500).json({ status: false, error: error.message, stack: error.stack });
     }
 });
 
-// ==================== ENDPOINT WAIFU ====================
+// ==================== API ENDPOINTS ====================
 app.get('/waifu', async (req, res) => {
   try {
     const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
     const buffer = await getBuffer(data.url);
-    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buffer.length });
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': buffer.length,
+    });
     res.end(buffer);
   } catch (error) {
     await sendErrorToTelegram(error);
@@ -279,14 +210,16 @@ app.get('/waifu', async (req, res) => {
   }
 });
 
-// ==================== ENDPOINT NSFW ====================
 app.get('/nsfw', async (req, res) => {
   try {
     const types = ["blowjob", "neko", "trap", "waifu"];
     const randomType = types[Math.floor(Math.random() * types.length)];
     const data = await fetchJson(`https://api.waifu.pics/nsfw/${randomType}`);
     const buffer = await getBuffer(data.url);
-    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buffer.length });
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': buffer.length,
+    });
     res.end(buffer);
   } catch (error) {
     await sendErrorToTelegram(error);
@@ -294,7 +227,6 @@ app.get('/nsfw', async (req, res) => {
   }
 });
 
-// ==================== ENDPOINT STATUS ====================
 app.get('/api/status', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -305,34 +237,41 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ==================== ENDPOINT WEBZIP ====================
+// ==================== WEBZIP ====================
 app.get('/webzip', async (req, res) => {
     const url = req.query.url;
     if (!url) return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
 
     try {
         const result = await saveweb2zip(url, { renameAssets: true });
+
         if (result.error?.code) {
-            return res.status(500).json({ status: false, error: result.error.text || 'Gagal menyimpan website.' });
+            return res.status(500).json({
+                status: false,
+                error: result.error.text || 'Gagal menyimpan website.'
+            });
         }
+
         return res.json({
             status: true,
             originalUrl: result.url,
             copiedFilesAmount: result.copiedFilesAmount,
             downloadUrl: result.downloadUrl
         });
+
     } catch (e) {
         await sendErrorToTelegram(e);
         return res.status(500).json({ status: false, error: e.message });
     }
 });
 
-// ==================== ENDPOINT TIKTOK ====================
+// ==================== TIKTOK ENDPOINT (LENGKAP) ====================
 app.get('/tiktok', async (req, res) => {
     const url = req.query.url;
     if (!url || !url.includes('tiktok.com')) {
         return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
     }
+
     try {
         const response = await axios.post('https://www.tikwm.com/api/', {}, {
             headers: {
@@ -344,12 +283,19 @@ app.get('/tiktok', async (req, res) => {
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            params: { url, count: 12, cursor: 0, web: 1, hd: 1 }
+            params: {
+                url: url,
+                count: 12,
+                cursor: 0,
+                web: 1,
+                hd: 1
+            }
         });
 
         const data = response.data.data;
-        if (!data) return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
-
+        if (!data) {
+            return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
+        }
         const formatNumber = (num) => {
             if (!num) return 0;
             if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -375,59 +321,58 @@ app.get('/tiktok', async (req, res) => {
                 download_count: formatNumber(data.download_count)
             }
         });
+
     } catch (error) {
         console.error('TikTok error:', error);
-        await sendErrorToTelegram(error);
         res.status(500).json({ status: false, error: 'Gagal memproses permintaan.' });
     }
 });
 
-// ==================== ENDPOINT BRAT ====================
+// ==================== BRAT (via API eksternal) ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
-    if (!text) return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
+    if (!text) {
+        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
+    }
 
     try {
         const apiUrl = `https://api.siputzx.my.id/api/m/brat?text=${encodeURIComponent(text)}`;
         const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(response.data);
+
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
         res.send(buffer);
     } catch (error) {
         console.error('Brat error:', error);
-        await sendErrorToTelegram(error);
         res.status(500).json({ status: 500, message: 'Gagal mengambil gambar brat.', error: error.message });
     }
 });
 
-// ==================== ENDPOINT BRATVID ====================
+// ==================== BRATVID (via API eksternal) ====================
 app.get('/bratvid', async (req, res) => {
     const text = req.query.text;
-    if (!text) return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
+    if (!text) {
+        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
+    }
 
     try {
         const apiUrl = `https://zelapioffciall.koyeb.app/canvas/bratvid?text=${encodeURIComponent(text)}`;
         const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(response.data);
+
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
         res.send(buffer);
     } catch (error) {
         console.error('Bratvid error:', error);
-        await sendErrorToTelegram(error);
         res.status(500).json({ status: 500, message: 'Gagal mengambil gambar bratvid.', error: error.message });
     }
 });
 
 // ==================== HALAMAN UTAMA ====================
-app.get('/', async (req, res) => {
-  try {
-    const safeUrl = config.URL || 'https://novabot.vercel.app';
-    const safeVersi = config.VERSI_WEB || '1.0';
-    const safeDeveloper = config.DEVELOPER || '@Novabot403';
-
-    const html = `<!DOCTYPE html>
+app.get('/', (req, res) => {
+  const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
@@ -436,7 +381,7 @@ app.get('/', async (req, res) => {
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
 <meta property="og:type" content="website">
-<meta property="og:url" content="${safeUrl}">
+<meta property="og:url" content="${config.URL}">
 <meta property="og:title" content="NovaBot API">
 <meta property="og:description" content="API untuk bot WhatsApp Novabot">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&family=VT323&display=swap" rel="stylesheet">
@@ -867,7 +812,7 @@ body {
   <div class="lux-section-title">Latest News</div>
   <div class="slider-container" id="newsSlider">
     <div class="slider-track">
-      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Novabot API v${safeVersi}</h3><p>API siap digunakan</p></div></div>
+      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Novabot API v${config.VERSI_WEB}</h3><p>API siap digunakan</p></div></div>
       <div class="slide"><video src="https://files.catbox.moe/sbwa8f.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Mudah & Cepat</h3><p>Integrasi dengan bot Anda</p></div></div>
     </div>
   </div>
@@ -878,7 +823,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/waifu</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
+        <button class="copy-btn" onclick="copyText('${config.URL}/waifu', '📋 Salin')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -891,7 +836,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/nsfw</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
+        <button class="copy-btn" onclick="copyText('${config.URL}/nsfw', '📋 Salin')"><i class="fas fa-copy"></i> nsfw</button>
       </div>
       <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -904,7 +849,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/webzip?url=</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
+        <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', '📋 Salin')"><i class="fas fa-copy"></i> webzip</button>
       </div>
       <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
       <div class="input-group">
@@ -918,7 +863,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/tiktok?url=</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
+        <button class="copy-btn" onclick="copyText('${config.URL}/tiktok?url=', '📋 Salin')"><i class="fas fa-copy"></i> tiktok</button>
       </div>
       <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
       <div class="input-group">
@@ -928,39 +873,11 @@ body {
       <div id="tiktokResponse" class="response-container"></div>
     </div>
 
-    <!-- INSTAGRAM -->
-    <div class="api-endpoint">
-      <div class="api-header">
-        <span class="method">GET</span><span class="url">/instagram?url=</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/instagram?url=', 'instagram')"><i class="fas fa-copy"></i> instagram</button>
-      </div>
-      <div class="api-desc">Download video/foto Instagram. Parameter ?url= (link post/reel)</div>
-      <div class="input-group">
-        <input type="text" id="instagramUrl" placeholder="https://www.instagram.com/p/xxxxx/">
-        <button class="start-btn" onclick="testInstagram()"><i class="fas fa-play"></i> Start</button>
-      </div>
-      <div id="instagramResponse" class="response-container"></div>
-    </div>
-
-    <!-- TELEGRAM -->
-    <div class="api-endpoint">
-      <div class="api-header">
-        <span class="method">GET</span><span class="url">/telegram?url=</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/telegram?url=', 'telegram')"><i class="fas fa-copy"></i> telegram</button>
-      </div>
-      <div class="api-desc">Download video/file dari Telegram. Parameter ?url= (link publik)</div>
-      <div class="input-group">
-        <input type="text" id="telegramUrl" placeholder="https://t.me/username/123">
-        <button class="start-btn" onclick="testTelegram()"><i class="fas fa-play"></i> Start</button>
-      </div>
-      <div id="telegramResponse" class="response-container"></div>
-    </div>
-
     <!-- BRAT -->
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/brat?text=</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
+        <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', '📋 Salin')"><i class="fas fa-copy"></i> brat</button>
       </div>
       <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -970,25 +887,25 @@ body {
       <div id="bratResponse" class="response-container"></div>
     </div>
 
-    <!-- PINTEREST -->
-    <div class="api-endpoint">
-      <div class="api-header">
-        <span class="method">GET</span><span class="url">/pinterest?q=</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
-      </div>
-      <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
-      <div class="input-group">
-        <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
-        <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
-      </div>
-      <div id="pinterestResponse" class="response-container"></div>
-    </div>
+<!-- PINTEREST -->
+<div class="api-endpoint">
+  <div class="api-header">
+    <span class="method">GET</span><span class="url">/pinterest?q=</span>
+    <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', '📋 Salin')"><i class="fas fa-copy"></i> pinterest</button>
+  </div>
+  <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
+  <div class="input-group">
+    <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
+    <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
+  </div>
+  <div id="pinterestResponse" class="response-container"></div>
+</div>
 
     <!-- BRATVID -->
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/bratvid?text=</span>
-        <button class="copy-btn" onclick="copyText('${safeUrl}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
+        <button class="copy-btn" onclick="copyText('${config.URL}/bratvid?text=', '📋 Salin')"><i class="fas fa-copy"></i> bratvid</button>
       </div>
       <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -1000,7 +917,7 @@ body {
   </div>
 
   <div class="footer">
-    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${safeDeveloper} • v${safeVersi}</p>
+    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${config.DEVELOPER} • v${config.VERSI_WEB}</p>
   </div>
 </div>
 
@@ -1065,111 +982,6 @@ slider.addEventListener('touchend',e=>{if(!isSwiping)return;isSwiping=false;cons
 }
 startSlider(); setupSlider();
 
-// ==================== INSTAGRAM ====================
-async function testInstagram() {
-  const urlInput = document.getElementById('instagramUrl').value.trim();
-  if (!urlInput) return alert('Masukkan URL Instagram!');
-  const respDiv = document.getElementById('instagramResponse');
-  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-  respDiv.className = 'response-container show';
-  try {
-    const apiUrl = '${safeUrl}' + '/instagram?url=' + encodeURIComponent(urlInput);
-    const res = await fetch(apiUrl);
-    const data = await res.json();
-    const status = res.status;
-    const jsonStr = JSON.stringify(data, null, 2);
-
-    if (data.status) {
-      let html = \`
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
-        </div>
-      \`;
-      if (data.result && Array.isArray(data.result) && data.result.length > 0) {
-        data.result.forEach((item, index) => {
-          html += \`<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">\`;
-          html += \`<p><strong>Item \${index+1}</strong></p>\`;
-          if (item.username) html += \`<p><i class="fas fa-user"></i> \${item.username}</p>\`;
-          if (item.likes) html += \`<p><i class="fas fa-heart"></i> \${item.likes} likes</p>\`;
-          if (item.comments) html += \`<p><i class="fas fa-comment"></i> \${item.comments} komentar</p>\`;
-          if (item.caption) html += \`<p><strong>Caption:</strong> \${item.caption.substring(0,100)}\${item.caption.length>100?'...':''}</p>\`;
-          if (item.thumbnail) html += \`<img src="\${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
-          if (item.download_url) {
-            html += \`<p><a href="\${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download \${item.type || 'media'}</a></p>\`;
-          }
-          html += \`</div>\`;
-        });
-      } else {
-        html += \`<pre>\${jsonStr}</pre>\`;
-      }
-      respDiv.innerHTML = html;
-      respDiv.classList.add('success');
-    } else {
-      respDiv.innerHTML = \`
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">\${status}</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
-        </div>
-        <pre>\${jsonStr}</pre>
-      \`;
-      respDiv.classList.add('error');
-    }
-  } catch (err) {
-    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
-    respDiv.classList.add('error');
-  }
-}
-
-// ==================== TELEGRAM ====================
-async function testTelegram() {
-  const urlInput = document.getElementById('telegramUrl').value.trim();
-  if (!urlInput) return alert('Masukkan URL Telegram!');
-  const respDiv = document.getElementById('telegramResponse');
-  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-  respDiv.className = 'response-container show';
-  try {
-    const apiUrl = '${safeUrl}' + '/telegram?url=' + encodeURIComponent(urlInput);
-    const res = await fetch(apiUrl);
-    const data = await res.json();
-    const status = res.status;
-    const jsonStr = JSON.stringify(data, null, 2);
-    if (data.status) {
-      let html = \`
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
-        </div>
-      \`;
-      const r = data.result;
-      if (r) {
-        if (r.title) html += \`<p><strong>Judul:</strong> \${r.title}</p>\`;
-        if (r.author) html += \`<p><strong>Author:</strong> \${r.author}</p>\`;
-        if (r.thumbnail) html += \`<img src="\${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
-        if (r.download_url || r.videoUrl) {
-          const dl = r.download_url || r.videoUrl;
-          html += \`<p><a href="\${dl}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download</a></p>\`;
-        }
-      }
-      html += \`<pre>\${jsonStr}</pre>\`;
-      respDiv.innerHTML = html;
-      respDiv.classList.add('success');
-    } else {
-      respDiv.innerHTML = \`
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">\${status}</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
-        </div>
-        <pre>\${jsonStr}</pre>
-      \`;
-      respDiv.classList.add('error');
-    }
-  } catch (err) {
-    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
-    respDiv.classList.add('error');
-  }
-}
-
 // ==================== PINTEREST ====================
 async function testPinterest() {
   const query = document.getElementById('pinterestQuery').value.trim();
@@ -1178,7 +990,7 @@ async function testPinterest() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${safeUrl}' + '/pinterest?q=' + encodeURIComponent(query);
+    const apiUrl = '${config.URL}' + '/pinterest?q=' + encodeURIComponent(query);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1225,7 +1037,7 @@ async function testWaifu() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${safeUrl}' + '/waifu');
+    const res = await fetch('${config.URL}' + '/waifu');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1245,7 +1057,7 @@ async function testNsfw() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${safeUrl}' + '/nsfw');
+    const res = await fetch('${config.URL}' + '/nsfw');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1267,7 +1079,7 @@ async function testWebzip() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${safeUrl}' + '/webzip?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${config.URL}' + '/webzip?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1294,7 +1106,7 @@ async function testTiktok() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${safeUrl}' + '/tiktok?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${config.URL}' + '/tiktok?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1341,7 +1153,7 @@ async function testBrat() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${safeUrl}' + '/brat?text=' + encodeURIComponent(textInput);
+    const apiUrl = '${config.URL}' + '/brat?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1369,7 +1181,7 @@ async function testBratvid() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${safeUrl}' + '/bratvid?text=' + encodeURIComponent(textInput);
+    const apiUrl = '${config.URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1404,14 +1216,9 @@ document.addEventListener('keydown',e=>{
 });
 </script>
 </body>
-</html>`;
-    
-    res.send(html);
-  } catch (error) {
-    console.error('Error rendering homepage:', error);
-    await sendErrorToTelegram(error);
-    res.status(500).send('Internal Server Error. Please try again later.');
-  }
+</html>
+  `;
+  res.send(html);
 });
 
 // ==================== START SERVER ====================
