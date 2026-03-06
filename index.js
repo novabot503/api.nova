@@ -352,16 +352,17 @@ body {
   position: absolute;
   width: 200%;
   height: 100%;
-  animation: waveMove 6s linear infinite;
+  animation: waveMove linear infinite;
 }
-.wave-svg:nth-child(2) {
-  animation-duration: 8s;
-  opacity: 0.6;
-}
-.wave-svg:nth-child(3) {
-  animation-duration: 10s;
-  opacity: 0.4;
-}
+.cpu-wave { animation-duration: 7s; }
+.cpu-wave:nth-child(2) { animation-duration: 9s; }
+.cpu-wave:nth-child(3) { animation-duration: 11s; }
+.mem-wave { animation-duration: 6s; }
+.mem-wave:nth-child(2) { animation-duration: 8s; }
+.mem-wave:nth-child(3) { animation-duration: 10s; }
+.net-wave { animation-duration: 5s; }
+.net-wave:nth-child(2) { animation-duration: 7s; }
+.net-wave:nth-child(3) { animation-duration: 9s; }
 @keyframes waveMove {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
@@ -425,7 +426,11 @@ body {
 }
 .api-endpoint:hover { border-color: #5b8cff; }
 .api-header {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 .method {
   background: #1f2a40; color: #ffcc00; font-weight: bold; padding: 2px 10px;
@@ -536,14 +541,14 @@ body {
       <span id="cpuValue">0.0%</span>
     </div>
     <div class="wave-container">
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,30 Q150,0 300,30 T600,30 T900,30 T1200,30 L1200,60 L0,60 Z" fill="#3a6df0" opacity="0.3"/>
+      <svg class="wave-svg cpu-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,40 Q200,0 400,40 T800,40 T1200,40 L1200,60 L0,60 Z" fill="#3a6df0" opacity="0.4"/>
       </svg>
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,35 Q150,10 300,35 T600,35 T900,35 T1200,35 L1200,60 L0,60 Z" fill="#00ff88" opacity="0.3"/>
+      <svg class="wave-svg cpu-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,25 Q200,45 400,25 T800,25 T1200,25 L1200,60 L0,60 Z" fill="#5b8cff" opacity="0.4"/>
       </svg>
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,25 Q150,40 300,25 T600,25 T900,25 T1200,25 L1200,60 L0,60 Z" fill="#ffcc00" opacity="0.3"/>
+      <svg class="wave-svg cpu-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,35 Q200,10 400,35 T800,35 T1200,35 L1200,60 L0,60 Z" fill="#1a4a9f" opacity="0.4"/>
       </svg>
     </div>
   </div>
@@ -555,14 +560,14 @@ body {
       <span id="memValue">0 MiB</span>
     </div>
     <div class="wave-container">
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,30 Q150,0 300,30 T600,30 T900,30 T1200,30 L1200,60 L0,60 Z" fill="#f97316" opacity="0.3"/>
+      <svg class="wave-svg mem-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,40 Q200,0 400,40 T800,40 T1200,40 L1200,60 L0,60 Z" fill="#f97316" opacity="0.4"/>
       </svg>
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,35 Q150,10 300,35 T600,35 T900,35 T1200,35 L1200,60 L0,60 Z" fill="#22c55e" opacity="0.3"/>
+      <svg class="wave-svg mem-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,25 Q200,45 400,25 T800,25 T1200,25 L1200,60 L0,60 Z" fill="#fb923c" opacity="0.4"/>
       </svg>
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,25 Q150,40 300,25 T600,25 T900,25 T1200,25 L1200,60 L0,60 Z" fill="#eab308" opacity="0.3"/>
+      <svg class="wave-svg mem-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,35 Q200,10 400,35 T800,35 T1200,35 L1200,60 L0,60 Z" fill="#ea580c" opacity="0.4"/>
       </svg>
     </div>
   </div>
@@ -574,14 +579,14 @@ body {
       <span id="netValue">0 B/s</span>
     </div>
     <div class="wave-container">
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,30 Q150,0 300,30 T600,30 T900,30 T1200,30 L1200,60 L0,60 Z" fill="#a855f7" opacity="0.3"/>
+      <svg class="wave-svg net-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,40 Q200,0 400,40 T800,40 T1200,40 L1200,60 L0,60 Z" fill="#a855f7" opacity="0.4"/>
       </svg>
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,35 Q150,10 300,35 T600,35 T900,35 T1200,35 L1200,60 L0,60 Z" fill="#ec4899" opacity="0.3"/>
+      <svg class="wave-svg net-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,25 Q200,45 400,25 T800,25 T1200,25 L1200,60 L0,60 Z" fill="#c084fc" opacity="0.4"/>
       </svg>
-      <svg class="wave-svg" viewBox="0 0 1200 60" preserveAspectRatio="none">
-        <path d="M0,25 Q150,40 300,25 T600,25 T900,25 T1200,25 L1200,60 L0,60 Z" fill="#06b6d4" opacity="0.3"/>
+      <svg class="wave-svg net-wave" viewBox="0 0 1200 60" preserveAspectRatio="none">
+        <path d="M0,35 Q200,10 400,35 T800,35 T1200,35 L1200,60 L0,60 Z" fill="#9333ea" opacity="0.4"/>
       </svg>
     </div>
   </div>
@@ -611,9 +616,9 @@ body {
       <div class="api-header">
         <span class="method">GET</span><span class="url">/waifu</span>
         <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
+        <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
-      <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
       <div id="waifuResponse" class="response-container"></div>
     </div>
 
