@@ -817,13 +817,13 @@ body {
     </div>
   </div>
 
-  <div class="lux-section-title">API Endpoints</div>
+   <div class="lux-section-title">API Endpoints</div>
   <div class="api-card">
     <!-- WAIFU -->
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/waifu</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/waifu', '📋 Salin')"><i class="fas fa-copy"></i> waifu</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/waifu', 'waifu')"><i class="fas fa-copy"></i>Salin</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -836,7 +836,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/nsfw</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/nsfw', '📋 Salin')"><i class="fas fa-copy"></i> nsfw</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/nsfw', 'nsfw')"><i class="fas fa-copy"></i>Salin</button>
       </div>
       <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -849,7 +849,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/webzip?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', '📋 Salin')"><i class="fas fa-copy"></i> webzip</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i>Salin</button>
       </div>
       <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
       <div class="input-group">
@@ -863,7 +863,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/tiktok?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/tiktok?url=', '📋 Salin')"><i class="fas fa-copy"></i> tiktok</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i>Salin</button>
       </div>
       <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
       <div class="input-group">
@@ -877,7 +877,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/brat?text=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', '📋 Salin')"><i class="fas fa-copy"></i> brat</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/brat?text=', 'brat')"><i class="fas fa-copy"></i>Salin</button>
       </div>
       <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -887,25 +887,25 @@ body {
       <div id="bratResponse" class="response-container"></div>
     </div>
 
-<!-- PINTEREST -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span><span class="url">/pinterest?q=</span>
-    <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', '📋 Salin')"><i class="fas fa-copy"></i> pinterest</button>
-  </div>
-  <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
-  <div class="input-group">
-    <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
-    <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
-  </div>
-  <div id="pinterestResponse" class="response-container"></div>
-</div>
+    <!-- PINTEREST -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/pinterest?q=</span>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i>Salin</button>
+      </div>
+      <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
+      <div class="input-group">
+        <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
+        <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="pinterestResponse" class="response-container"></div>
+    </div>
 
     <!-- BRATVID -->
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/bratvid?text=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/bratvid?text=', '📋 Salin')"><i class="fas fa-copy"></i> bratvid</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i>Salin</button>
       </div>
       <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -917,9 +917,10 @@ body {
   </div>
 
   <div class="footer">
-    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${config.DEVELOPER} • v${config.VERSI_WEB}</p>
+    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${safeDeveloper} • v${safeVersi}</p>
   </div>
 </div>
+
 
 <script>
 // ==================== STATUS PANEL TOGGLE ====================
