@@ -211,7 +211,7 @@ app.get('/tiktok', async (req, res) => {
     }
 });
 
-// ==================== BRAT TEXT GENERATOR ====================
+// ==================== BRAT TEXT GENERATOR (DIPERBAIKI) ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
     if (!text) {
@@ -219,33 +219,34 @@ app.get('/brat', async (req, res) => {
     }
 
     try {
-        const width = 370;
-        const height = 390;
+        // Ukuran canvas lebih besar agar teks panjang muat
+        const width = 600;
+        const height = 400;
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
 
-        // background putih
+        // Background putih
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        // Fungsi untuk mengukur teks
-        const getTextWidth = (txt, fontSize) => {
-            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-            return ctx.measureText(txt).width;
-        };
+        // Font stack yang aman (Impact / Arial Black)
+        const fontFamily = '"Impact", "Arial Black", "Helvetica Bold", "sans-serif"';
 
-        // Cari ukuran font yang pas
-        let fontSize = 120;
-        let lines = [];
-        const margin = 10;
+        // Margin
+        const margin = 20;
         const maxWidth = width - margin * 2;
         const maxHeight = height - margin * 2;
+
+        // Cari ukuran font yang pas
+        let fontSize = 100;
+        let lines = [];
         let lineHeight = 0;
 
         while (fontSize > 10) {
-            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            ctx.font = `bold ${fontSize}px ${fontFamily}`;
             lineHeight = fontSize * 1.2;
 
+            // Bagi teks menjadi baris
             lines = [];
             let line = '';
             const words = text.split(' ');
@@ -267,7 +268,7 @@ app.get('/brat', async (req, res) => {
             fontSize -= 2;
         }
 
-        // Tulis teks rata tengah
+        // Gambar teks
         ctx.fillStyle = '#000000';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -283,6 +284,7 @@ app.get('/brat', async (req, res) => {
         res.set('Content-Type', 'image/png');
         res.send(canvas.toBuffer('image/png'));
     } catch (err) {
+        console.error('Brat error:', err);
         res.status(500).json({ status: 500, message: 'Terjadi kesalahan saat membuat gambar.', error: err.message });
     }
 });
@@ -294,7 +296,7 @@ app.get('/', (req, res) => {
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=0.55" />
+<meta name="viewport" content="width=device-width, initial-scale=0.60" />
 <title>NovaBot API</title>
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
@@ -468,7 +470,14 @@ body {
 .response-container.success { border-left-color: #00ff88; }
 .response-container.error { border-left-color: #ff3b30; }
 .response-container img {
-  max-width: 100%; max-height: 200px; border-radius: 8px; display: block; margin: 0 auto;
+  max-width: 100%;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 8px;
 }
 .response-container video {
   max-width: 100%; max-height: 300px; border-radius: 8px; display: block; margin: 10px auto;
@@ -731,7 +740,7 @@ async function testTiktok() {
   }
 }
 
-// ==================== BRAT ====================
+// ==================== BRAT (DIPERBAIKI) ====================
 async function testBrat() {
   const textInput = document.getElementById('bratText').value.trim();
   if (!textInput) return alert('Masukkan teks!');
@@ -742,17 +751,18 @@ async function testBrat() {
     const apiUrl = \`${config.URL}/brat?text=\${encodeURIComponent(textInput)}\`;
     const res = await fetch(apiUrl);
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Gagal');
+      const errText = await res.text();
+      throw new Error(\`HTTP \${res.status}: \${errText}\`);
     }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
       <div class="badge success">200 OK</div>
-      <img src="\${url}" alt="Brat Image" style="max-width:100%;">
+      <img src="\${url}" alt="Brat Image">
     \`;
     respDiv.classList.add('success');
   } catch (err) {
+    console.error('Brat fetch error:', err);
     respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
