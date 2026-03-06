@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const CryptoJS = require('crypto-js');
 const cloudscraper = require('cloudscraper');
 const https = require('https');
 const config = require('./setting.js');
@@ -42,6 +43,63 @@ async function sendErrorToTelegram(error) {
     });
   } catch (e) {
     console.error('Gagal kirim ke Telegram:', e.message);
+  }
+}
+
+// ==================== INSTAGRAM HELPER ====================
+async function ambilWaktuServer() {
+  try {
+    // Coba ambil dari server, tapi karena udah mati, kita kasih fallback
+    const { data } = await axios.get('https://sssinstagram.com/msec', { timeout: 5000 });
+    return Math.floor(data.msec * 1000);
+  } catch (error) {
+    // Fallback: pake waktu lokal server aja
+    console.log('Gagal ambil waktu server, pake fallback Date.now()');
+    return Date.now();
+  }
+}
+
+async function bikinSignature(url, secretKey, timestamp) {
+  const waktuDisesuaikan = Date.now() - (timestamp ? Date.now() - timestamp : 0);
+  const teksHash = `${url}${waktuDisesuaikan}${secretKey}`;
+  const hash = CryptoJS.SHA256(teksHash).toString(CryptoJS.enc.Hex);
+  return { signature: hash, waktuDisesuaikan, timestamp };
+}
+
+async function ambilDataInstagram(url) {
+  const secretKey = '19e08ff42f18559b51825685d917c5c9e9d89f8a5c1ab147f820f46e94c3df26';
+  const timestamp = await ambilWaktuServer();
+  const { signature, waktuDisesuaikan } = await bikinSignature(url, secretKey, timestamp);
+
+  const dataRequest = {
+    url,
+    ts: waktuDisesuaikan,
+    _ts: 1739186038417,
+    _tsc: timestamp ? Date.now() - timestamp : 0,
+    _s: signature
+  };
+
+  const headers = {
+    'Accept': 'application/json, text/plain, */*',
+    'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0',
+    'Referer': 'https://sssinstagram.com/',
+    'Origin': 'https://sssinstagram.com/'
+  };
+
+  try {
+    const response = await axios.post('https://sssinstagram.com/api/convert', dataRequest, {
+      headers,
+      timeout: 10000
+    });
+    
+    // LOG INI PENTING: buat lihat bentuk respons asli dari API
+    console.log('Response from sssinstagram:', JSON.stringify(response.data, null, 2));
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error detail from sssinstagram:', error.message);
+    return { error: 'Gagal ambil data', details: error.message };
   }
 }
 
@@ -183,19 +241,6 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
-// ==================== INSTAGRAM HELPER (NEW - VIA API EKSTERNAL) ====================
-async function ambilDataInstagram(url) {
-    // GANTI ENDPOINT DI SINI
-    const apiUrl = `https://api.akuari.my.id/downloader/ig?url=${encodeURIComponent(url)}`;
-    try {
-        const response = await axios.get(apiUrl, { timeout: 15000 });
-        return response.data;
-    } catch (error) {
-        console.error('API error:', error.message);
-        return { status: false, error: 'Gagal mengambil data' };
-    }
-}
-
 // ==================== ENDPOINT INSTAGRAM ====================
 app.get('/instagram', async (req, res) => {
     const { url } = req.query;
@@ -204,25 +249,58 @@ app.get('/instagram', async (req, res) => {
     }
     try {
         const result = await ambilDataInstagram(url);
-        // API baru ini langsung punya struktur { status, data }
-        if (!result.status) {
-            return res.status(500).json({ status: false, error: result.error || 'Gagal mengambil data dari API eksternal' });
+        
+        // Log hasil dari helper
+        console.log('Result from ambilDataInstagram:', result);
+
+        // Cek apakah ada error
+        if (result.error) {
+            return res.status(500).json({ 
+                status: false, 
+                error: result.details || result.error,
+                // Kita kirim juga data mentahnya buat debugging (opsional)
+                raw: result 
+            });
         }
-        const data = result.data;
-        // Format data dari API ini berbeda, kita sesuaikan dengan output yang diharapkan frontend
-        res.json({
-            status: true,
-            result: {
-                author: data.username || data.author || 'Tidak diketahui',
-                caption: data.caption || 'Tidak ada caption',
-                views: data.views || data.play_count || 0,
-                likes: data.like || data.like_count || 0,
-                duration: data.duration || 0,
-                source: 'Instagram',
-                thumbnail: data.thumbnail || null,
-                videoUrl: data.video || data.url || null
-            }
-        });
+
+        // Coba deteksi struktur respons. 
+        // Kalau result punya property 'meta' atau 'url', berarti formatnya array of objects
+        if (Array.isArray(result)) {
+            const output = result.map(item => ({
+                username: item.meta?.username || null,
+                likes: item.meta?.like_count || 0,
+                comments: item.meta?.comment_count || 0,
+                caption: item.meta?.title || null,
+                type: item.url?.[0]?.ext || null,
+                download_url: item.url?.[0]?.url || null,
+                thumbnail: item.thumb || null
+            }));
+            return res.json({ status: true, result: output });
+        } 
+        // Kalau result langsung object dengan data yang diinginkan
+        else if (result.data) {
+            // Asumsi struktur: { data: [...] }
+            const data = Array.isArray(result.data) ? result.data : [result.data];
+            const output = data.map(item => ({
+                username: item.username || item.meta?.username || null,
+                likes: item.likes || item.meta?.like_count || 0,
+                comments: item.comments || item.meta?.comment_count || 0,
+                caption: item.caption || item.meta?.title || null,
+                type: item.type || item.url?.[0]?.ext || null,
+                download_url: item.download_url || item.url?.[0]?.url || null,
+                thumbnail: item.thumbnail || item.thumb || null
+            }));
+            return res.json({ status: true, result: output });
+        }
+        // Kalau nggak ketemu format, kirim balik data mentahnya
+        else {
+            return res.json({ 
+                status: true, 
+                message: 'Format data tidak dikenal, berikut data mentahnya:', 
+                raw: result 
+            });
+        }
+
     } catch (error) {
         console.error('Instagram error:', error);
         res.status(500).json({ status: false, error: error.message });
@@ -1051,7 +1129,7 @@ slider.addEventListener('touchend',e=>{if(!isSwiping)return;isSwiping=false;cons
 }
 startSlider(); setupSlider();
 
-// ==================== INSTAGRAM (UPDATED) ====================
+// ==================== INSTAGRAM ====================
 async function testInstagram() {
   const urlInput = document.getElementById('instagramUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL Instagram!');
@@ -1064,38 +1142,54 @@ async function testInstagram() {
     const data = await res.json();
     const status = res.status;
     const jsonStr = JSON.stringify(data, null, 2);
+
     if (data.status) {
-      const r = data.result;
-      let html = \`
+      let html = `
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
           <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-      \`;
-      html += \`<p><strong>Author:</strong> \${r.author}</p>\`;
-      if (r.caption) html += \`<p><strong>Caption:</strong> \${r.caption}</p>\`;
-      html += \`<p><i class="fas fa-eye"></i> Views: \${r.views} • <i class="fas fa-heart"></i> Likes: \${r.likes}</p>\`;
-      if (r.duration) html += \`<p><strong>Durasi:</strong> \${r.duration}s</p>\`;
-      if (r.thumbnail) html += \`<img src="\${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
-      if (r.videoUrl) {
-        html += \`<video src="\${r.videoUrl}" controls style="max-width:100%; margin-top:10px;"></video>\`;
-        html += \`<p><a href="\${r.videoUrl}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download Video</a></p>\`;
+      `;
+
+      // Cek apakah ada properti 'result' yang berisi array
+      if (data.result && Array.isArray(data.result) && data.result.length > 0) {
+        data.result.forEach((item, index) => {
+          html += `<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">`;
+          html += `<p><strong>Item ${index+1}</strong></p>`;
+          if (item.username) html += `<p><i class="fas fa-user"></i> ${item.username}</p>`;
+          if (item.likes) html += `<p><i class="fas fa-heart"></i> ${item.likes} likes</p>`;
+          if (item.comments) html += `<p><i class="fas fa-comment"></i> ${item.comments} komentar</p>`;
+          if (item.caption) html += `<p><strong>Caption:</strong> ${item.caption.substring(0,100)}${item.caption.length>100?'...':''}</p>`;
+          if (item.thumbnail) html += `<img src="${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
+          if (item.download_url) {
+            html += `<p><a href="${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download ${item.type || 'media'}</a></p>`;
+          }
+          html += `</div>`;
+        });
+      } 
+      // Kalau ada properti 'raw' (dari debugging), tampilkan itu
+      else if (data.raw) {
+        html += `<p><strong>Data mentah dari API:</strong></p><pre>${JSON.stringify(data.raw, null, 2)}</pre>`;
       }
-      html += \`<pre>\${jsonStr}</pre>\`;
+      // Kalau nggak ada result, tampilkan JSON aja
+      else {
+        html += `<pre>${jsonStr}</pre>`;
+      }
+
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = \`
+      respDiv.innerHTML = `
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">\${status}</div>
-          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <div class="badge error">${status}</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <pre>\${jsonStr}</pre>
-      \`;
+        <pre>${jsonStr}</pre>
+      `;
       respDiv.classList.add('error');
     }
   } catch (err) {
-    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
+    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
     respDiv.classList.add('error');
   }
 }
