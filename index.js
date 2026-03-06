@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const CryptoJS = require('crypto-js');
 const cloudscraper = require('cloudscraper');
 const https = require('https');
 const config = require('./setting.js');
@@ -42,6 +43,55 @@ async function sendErrorToTelegram(error) {
     });
   } catch (e) {
     console.error('Gagal kirim ke Telegram:', e.message);
+  }
+}
+
+// ==================== INSTAGRAM HELPER ====================
+async function ambilWaktuServer() {
+  try {
+    const { data } = await axios.get('https://sssinstagram.com/msec', { timeout: 5000 });
+    return Math.floor(data.msec * 1000);
+  } catch {
+    return Date.now();
+  }
+}
+
+async function bikinSignature(url, secretKey, timestamp) {
+  const waktuDisesuaikan = Date.now() - (timestamp ? Date.now() - timestamp : 0);
+  const teksHash = `${url}${waktuDisesuaikan}${secretKey}`;
+  const hash = CryptoJS.SHA256(teksHash).toString(CryptoJS.enc.Hex);
+  return { signature: hash, waktuDisesuaikan, timestamp };
+}
+
+async function ambilDataInstagram(url) {
+  const secretKey = '19e08ff42f18559b51825685d917c5c9e9d89f8a5c1ab147f820f46e94c3df26';
+  const timestamp = await ambilWaktuServer();
+  const { signature, waktuDisesuaikan } = await bikinSignature(url, secretKey, timestamp);
+
+  const dataRequest = {
+    url,
+    ts: waktuDisesuaikan,
+    _ts: 1739186038417,
+    _tsc: timestamp ? Date.now() - timestamp : 0,
+    _s: signature
+  };
+
+  const headers = {
+    'Accept': 'application/json, text/plain, */*',
+    'Content-Type': 'application/json',
+    'User-Agent': 'Mozilla/5.0',
+    'Referer': 'https://sssinstagram.com/',
+    'Origin': 'https://sssinstagram.com/'
+  };
+
+  try {
+    const response = await axios.post('https://sssinstagram.com/api/convert', dataRequest, {
+      headers,
+      timeout: 10000
+    });
+    return response.data;
+  } catch {
+    return { error: 'Gagal ambil data', details: 'Yah error, coba lagi ya' };
   }
 }
 
@@ -182,6 +232,34 @@ async function saveweb2zip(url, options = {}) {
         }
     }
 }
+
+// ==================== INSTAGRAM ENDPOINT ====================
+app.get('/instagram', async (req, res) => {
+    const { url } = req.query;
+    if (!url || !url.includes('instagram.com')) {
+        return res.status(400).json({ status: false, error: 'URL Instagram tidak valid.' });
+    }
+    try {
+        const result = await ambilDataInstagram(url);
+        if (result.error) {
+            return res.status(500).json({ status: false, error: result.details || result.error });
+        }
+        const semuaMedia = Array.isArray(result) ? result : [result];
+        const output = semuaMedia.map(item => ({
+            username: item.meta?.username || null,
+            likes: item.meta?.like_count || 0,
+            comments: item.meta?.comment_count || 0,
+            caption: item.meta?.title || null,
+            type: item.url?.[0]?.ext || null,
+            download_url: item.url?.[0]?.url || null,
+            thumbnail: item.thumb || null
+        }));
+        res.json({ status: true, result: output });
+    } catch (error) {
+        console.error('Instagram error:', error);
+        res.status(500).json({ status: false, error: error.message });
+    }
+});
 
 // ==================== PINTEREST ENDPOINT ====================
 app.get('/pinterest', async (req, res) => {
@@ -880,6 +958,20 @@ body {
       <div id="tiktokResponse" class="response-container"></div>
     </div>
 
+<!-- INSTAGRAM -->
+<div class="api-endpoint">
+  <div class="api-header">
+    <span class="method">GET</span><span class="url">/instagram?url=</span>
+    <button class="copy-btn" onclick="copyText('${config.URL}/instagram?url=', 'instagram')"><i class="fas fa-copy"></i> instagram</button>
+  </div>
+  <div class="api-desc">Download video/foto Instagram. Parameter ?url= (link post/reel)</div>
+  <div class="input-group">
+    <input type="text" id="instagramUrl" placeholder="https://www.instagram.com/p/xxxxx/">
+    <button class="start-btn" onclick="testInstagram()"><i class="fas fa-play"></i> Start</button>
+  </div>
+  <div id="instagramResponse" class="response-container"></div>
+</div>
+
     <!-- BRAT -->
     <div class="api-endpoint">
       <div class="api-header">
@@ -988,6 +1080,60 @@ slider.addEventListener('touchend',e=>{if(!isSwiping)return;isSwiping=false;cons
 ['mousedown','mousemove','mouseup','mouseleave'].forEach(ev=>slider.addEventListener(ev,e=>{e.preventDefault();}));
 }
 startSlider(); setupSlider();
+
+// ==================== INSTAGRAM ====================
+async function testInstagram() {
+  const urlInput = document.getElementById('instagramUrl').value.trim();
+  if (!urlInput) return alert('Masukkan URL Instagram!');
+  const respDiv = document.getElementById('instagramResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = '${config.URL}' + '/instagram?url=' + encodeURIComponent(urlInput);
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    const status = res.status;
+    const jsonStr = JSON.stringify(data, null, 2);
+    if (data.status) {
+      let html = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge success">200 OK</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+      `;
+      if (data.result.length > 0) {
+        data.result.forEach((item, index) => {
+          html += `<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">`;
+          html += `<p><strong>Item ${index+1}</strong></p>`;
+          if (item.username) html += `<p><i class="fas fa-user"></i> ${item.username}</p>`;
+          if (item.likes) html += `<p><i class="fas fa-heart"></i> ${item.likes} likes</p>`;
+          if (item.comments) html += `<p><i class="fas fa-comment"></i> ${item.comments} komentar</p>`;
+          if (item.caption) html += `<p><strong>Caption:</strong> ${item.caption.substring(0,100)}${item.caption.length>100?'...':''}</p>`;
+          if (item.thumbnail) html += `<img src="${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
+          if (item.download_url) {
+            html += `<p><a href="${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download ${item.type || 'media'}</a></p>`;
+          }
+          html += `</div>`;
+        });
+      }
+      html += `<pre>${jsonStr}</pre>`;
+      respDiv.innerHTML = html;
+      respDiv.classList.add('success');
+    } else {
+      respDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <div class="badge error">${status}</div>
+          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+        </div>
+        <pre>${jsonStr}</pre>
+      `;
+      respDiv.classList.add('error');
+    }
+  } catch (err) {
+    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.classList.add('error');
+  }
+}
 
 // ==================== PINTEREST ====================
 async function testPinterest() {
