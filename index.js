@@ -57,7 +57,6 @@ async function pinterest2(query) {
         const url = new URL(baseUrl);
         Object.entries(queryParams).forEach(entry => url.searchParams.set(entry[0], entry[1]));
         try {
-            // PAKAI AXIOS
             const response = await axios.get(url.toString());
             const json = response.data;
 
@@ -152,7 +151,8 @@ app.get('/pinterest', async (req, res) => {
         });
     } catch (error) {
         console.error('Pinterest error:', error);
-        res.status(500).json({ status: false, error: error.message });
+        // Tampilkan detail error untuk debugging (hapus di production jika perlu)
+        res.status(500).json({ status: false, error: error.message, stack: error.stack });
     }
 });
 
@@ -334,8 +334,7 @@ app.get('/bratvid', async (req, res) => {
 
 // ==================== HALAMAN UTAMA ====================
 app.get('/', (req, res) => {
-  const html = `
-<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
@@ -959,37 +958,37 @@ async function testPinterest() {
     const status = res.status;
     const jsonStr = JSON.stringify(data, null, 2);
     if (data.status) {
-      let html = `
+      let html = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
           <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <p>Ditemukan ${data.result.length} hasil.</p>
-      `;
+        <p>Ditemukan \${data.result.length} hasil.</p>
+      \`;
       if (data.result.length > 0) {
         html += '<div style="display: flex; flex-wrap: wrap; gap: 5px;">';
         data.result.slice(0, 5).forEach(item => {
           if (item.images_url) {
-            html += `<img src="${item.images_url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px;">`;
+            html += \`<img src="\${item.images_url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px;">\`;
           }
         });
         html += '</div>';
       }
-      html += `<pre>${jsonStr}</pre>`;
+      html += \`<pre>\${jsonStr}</pre>\`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = `
+      respDiv.innerHTML = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">${status}</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <div class="badge error">\${status}</div>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <pre>${jsonStr}</pre>
-      `;
+        <pre>\${jsonStr}</pre>
+      \`;
       respDiv.classList.add('error');
     }
   } catch (err) {
-    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
 }
