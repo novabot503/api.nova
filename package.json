@@ -7,7 +7,6 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "canvas": "^3.2.0",
     "axios": "^1.6.2",
     "cloudscraper": "^4.6.0",
     "cors": "^2.8.5",

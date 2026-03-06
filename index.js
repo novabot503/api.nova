@@ -421,8 +421,12 @@ body {
 /* API ENDPOINT CARDS */
 .api-card { margin-bottom: 20px; }
 .api-endpoint {
-  background: #101520; border: 1px solid #1f2a40; border-radius: 12px;
-  padding: 16px; margin-bottom: 15px; transition: 0.2s;
+  background: #101520;
+  border: 1px solid #1f2a40;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 15px;
+  transition: 0.2s;
 }
 .api-endpoint:hover { border-color: #5b8cff; }
 .api-header {
@@ -433,43 +437,99 @@ body {
   flex-wrap: wrap;
 }
 .method {
-  background: #1f2a40; color: #ffcc00; font-weight: bold; padding: 2px 10px;
-  border-radius: 30px; font-size: 12px; border: 1px solid #ffcc00;
+  background: #1f2a40;
+  color: #ffcc00;
+  font-weight: bold;
+  padding: 2px 10px;
+  border-radius: 30px;
+  font-size: 12px;
+  border: 1px solid #ffcc00;
 }
 .url {
-  color: #00ff88; word-break: break-all; font-family: 'VT323'; font-size: 14px;
-  background: #1a1f30; padding: 2px 10px; border-radius: 30px; flex: 1;
+  color: #00ff88;
+  word-break: break-all;
+  font-family: 'VT323';
+  font-size: 14px;
+  background: #1a1f30;
+  padding: 2px 10px;
+  border-radius: 30px;
+  flex: 1;
 }
 .copy-btn {
-  background: transparent; border: 1px solid #5b8cff; color: #5b8cff;
-  padding: 4px 12px; border-radius: 30px; cursor: pointer; font-size: 12px;
-  display: inline-flex; align-items: center; gap: 5px; transition: 0.2s;
+  background: transparent;
+  border: 1px solid #5b8cff;
+  color: #5b8cff;
+  padding: 4px 12px;
+  border-radius: 30px;
+  cursor: pointer;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: 0.2s;
 }
-.copy-btn:hover { background: #5b8cff; color: #000; }
-.api-desc { color: #a0b0c0; font-size: 13px; margin-bottom: 12px; }
+.copy-btn:hover {
+  background: #5b8cff;
+  color: #000;
+}
+.api-desc {
+  color: #a0b0c0;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
 
 /* TOMBOL START */
 .start-btn {
-  background: #5b8cff; color: #000; border: none; padding: 6px 16px;
-  border-radius: 30px; font-size: 13px; font-weight: bold; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px; transition: 0.2s;
+  background: #5b8cff;
+  color: #000;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 30px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: 0.2s;
 }
-.start-btn:hover { filter: brightness(1.1); transform: scale(1.02); }
+.start-btn:hover {
+  filter: brightness(1.1);
+  transform: scale(1.02);
+}
 
 /* INPUT GROUP */
 .input-group {
-  display: flex; gap: 10px; align-items: center; margin: 10px 0; flex-wrap: wrap;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
+  flex-wrap: wrap;
 }
 .input-group input {
-  flex: 1; padding: 8px 14px; border-radius: 30px; border: 1px solid #1f2a40;
-  background: #1a1f30; color: #fff; font-size: 13px;
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 30px;
+  border: 1px solid #1f2a40;
+  background: #1a1f30;
+  color: #fff;
+  font-size: 13px;
 }
-.input-group input:focus { outline: none; border-color: #5b8cff; }
+.input-group input:focus {
+  outline: none;
+  border-color: #5b8cff;
+}
 
 /* RESPONSE CONTAINER */
 .response-container {
-  margin-top: 15px; padding: 12px; background: #1a1f30; border-radius: 8px;
-  border-left: 4px solid #5b8cff; display: none; max-height: 500px; overflow: auto;
+  margin-top: 15px;
+  padding: 12px;
+  background: #1a1f30;
+  border-radius: 8px;
+  border-left: 4px solid #5b8cff;
+  display: none;
+  max-height: 500px;
+  overflow: auto;
 }
 .response-container.show { display: block; }
 .response-container.success { border-left-color: #00ff88; }
@@ -486,14 +546,25 @@ body {
   border: 2px solid #2a3a60;
 }
 .response-container video {
-  max-width: 100%; max-height: 300px; border-radius: 8px; display: block; margin: 10px auto;
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 8px;
+  display: block;
+  margin: 10px auto;
 }
 .response-container pre {
-  white-space: pre-wrap; font-family: 'VT323'; font-size: 12px; color: #ccc;
+  white-space: pre-wrap;
+  font-family: 'VT323';
+  font-size: 12px;
+  color: #ccc;
   margin-top: 10px;
 }
 .badge {
-  display: inline-block; padding: 2px 8px; border-radius: 30px; font-weight: bold; font-size: 11px;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 30px;
+  font-weight: bold;
+  font-size: 11px;
   margin-bottom: 8px;
 }
 .badge.success { background: #00ff88; color: #000; }
@@ -501,24 +572,44 @@ body {
 
 /* COPY JSON BUTTON */
 .copy-json-btn {
-  background: #2a3a60; color: #fff; border: none; padding: 4px 10px;
-  border-radius: 30px; font-size: 11px; cursor: pointer; margin-left: 8px;
-  display: inline-flex; align-items: center; gap: 4px;
+  background: #2a3a60;
+  color: #fff;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 30px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .copy-json-btn:hover { background: #3a4a70; }
 
 /* DOWNLOAD BUTTON */
 .download-btn {
-  background: #3a6df0; color: #fff; border: none; padding: 4px 10px;
-  border-radius: 30px; font-size: 11px; cursor: pointer; margin-left: 8px;
-  display: inline-flex; align-items: center; gap: 4px;
+  background: #3a6df0;
+  color: #fff;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 30px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .download-btn:hover { background: #2a5ac0; }
 
 /* FOOTER */
 .footer {
-  text-align: center; padding: 20px; border-top: 1px solid #1f2a40;
-  color: #8a9bb0; font-size: 12px; margin-top: 20px;
+  text-align: center;
+  padding: 20px;
+  border-top: 1px solid #1f2a40;
+  color: #8a9bb0;
+  font-size: 12px;
+  margin-top: 20px;
 }
 </style>
 </head>
@@ -616,9 +707,9 @@ body {
       <div class="api-header">
         <span class="method">GET</span><span class="url">/waifu</span>
         <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
-        <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
+      <button class="start-btn" onclick="testWaifu()"><i class="fas fa-play"></i> Start</button>
       <div id="waifuResponse" class="response-container"></div>
     </div>
 
