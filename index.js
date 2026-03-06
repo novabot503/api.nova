@@ -211,7 +211,7 @@ app.get('/tiktok', async (req, res) => {
     }
 });
 
-// ==================== BRAT TEXT GENERATOR (PERBAIKAN) ====================
+// ==================== BRAT TEXT GENERATOR (FIXED) ====================
 app.get('/brat', async (req, res) => {
     const text = req.query.text;
     if (!text) {
@@ -219,7 +219,10 @@ app.get('/brat', async (req, res) => {
     }
 
     try {
-        // Ukuran canvas 600x400
+        // Log untuk debugging
+        console.log('Brat text received:', text);
+
+        // Ukuran canvas (bisa disesuaikan)
         const width = 600;
         const height = 400;
         const canvas = createCanvas(width, height);
@@ -229,31 +232,17 @@ app.get('/brat', async (req, res) => {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        // Gunakan font yang pasti ada di semua sistem
-        // Prioritas: Arial (umum) -> Helvetica -> sans-serif
-        const fontFamily = '"Arial", "Helvetica", "sans-serif"';
-        
+        // Font stack yang sangat umum dan mendukung semua karakter
+        // Menggunakan font system default (sans-serif) yang pasti ada
+        const fontFamily = 'Arial, Helvetica, sans-serif';
+
         // Margin
         const margin = 20;
         const maxWidth = width - margin * 2;
         const maxHeight = height - margin * 2;
 
-        // Jika teks kosong atau hanya spasi
-        if (!text.trim()) {
-            ctx.font = `bold 60px ${fontFamily}`;
-            ctx.fillStyle = '#000000';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('(kosong)', width/2, height/2);
-            
-            const buffer = canvas.toBuffer('image/png');
-            res.setHeader('Content-Type', 'image/png');
-            res.setHeader('Content-Length', buffer.length);
-            return res.send(buffer);
-        }
-
         // Cari ukuran font yang pas
-        let fontSize = 100;
+        let fontSize = 120;
         let lines = [];
         let lineHeight = 0;
 
@@ -263,36 +252,31 @@ app.get('/brat', async (req, res) => {
 
             // Reset lines
             lines = [];
-            
-            // Jika teks tidak mengandung spasi (satu kata panjang)
-            if (!text.includes(' ')) {
-                // Ukur lebar teks
+            let line = '';
+            const words = text.split(' ');
+
+            for (let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const testWidth = ctx.measureText(testLine).width;
+                if (testWidth > maxWidth && n > 0) {
+                    lines.push(line.trim());
+                    line = words[n] + ' ';
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line.trim());
+
+            // Jika teks tidak mengandung spasi, treat sebagai satu kata
+            if (lines.length === 0 && text.length > 0) {
                 const textWidth = ctx.measureText(text).width;
-                if (textWidth <= maxWidth && lineHeight <= maxHeight) {
+                if (textWidth <= maxWidth) {
                     lines = [text];
                 } else {
-                    // Jika terlalu panjang, turunkan font size
+                    // Jika terlalu panjang, turunkan font
                     fontSize -= 2;
                     continue;
                 }
-            } else {
-                // Bagi teks menjadi baris berdasarkan spasi
-                let line = '';
-                const words = text.split(' ');
-
-                for (let n = 0; n < words.length; n++) {
-                    const word = words[n];
-                    const testLine = line ? line + ' ' + word : word;
-                    const testWidth = ctx.measureText(testLine).width;
-                    
-                    if (testWidth > maxWidth && line) {
-                        lines.push(line);
-                        line = word;
-                    } else {
-                        line = testLine;
-                    }
-                }
-                if (line) lines.push(line);
             }
 
             const totalHeight = lines.length * lineHeight;
@@ -300,15 +284,19 @@ app.get('/brat', async (req, res) => {
             fontSize -= 2;
         }
 
-        // Jika tidak ada baris (seharusnya tidak terjadi)
+        // Fallback jika masih gagal (misal teks super panjang)
         if (lines.length === 0) {
-            lines = [text];
-            fontSize = 40;
+            fontSize = 30;
             ctx.font = `bold ${fontSize}px ${fontFamily}`;
             lineHeight = fontSize * 1.2;
+            // Potong paksa per 20 karakter
+            const maxChars = Math.floor(maxWidth / (fontSize * 0.6));
+            for (let i = 0; i < text.length; i += maxChars) {
+                lines.push(text.substring(i, i + maxChars));
+            }
         }
 
-        // Gambar teks
+        // Gambar teks hitam di tengah
         ctx.fillStyle = '#000000';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
@@ -321,6 +309,7 @@ app.get('/brat', async (req, res) => {
             y += lineHeight;
         }
 
+        // Kirim sebagai PNG
         const buffer = canvas.toBuffer('image/png');
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', buffer.length);
