@@ -1,6 +1,5 @@
 const express = require('express');
 const axios = require('axios');
-const fetch = require("node-fetch");
 const cloudscraper = require('cloudscraper');
 const config = require('./setting.js');
 
@@ -58,7 +57,10 @@ async function pinterest2(query) {
         const url = new URL(baseUrl);
         Object.entries(queryParams).forEach(entry => url.searchParams.set(entry[0], entry[1]));
         try {
-            const json = await (await fetch(url.toString())).json();
+            // PAKAI AXIOS
+            const response = await axios.get(url.toString());
+            const json = response.data;
+
             const results = json.resource_response?.data?.results ?? [];
             const result = results.map(item => ({
                 pin: 'https://www.pinterest.com/pin/' + (item.id ?? ''),
