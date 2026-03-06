@@ -183,9 +183,10 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
-// ==================== INSTAGRAM HELPER (NEW - VIA API EXTERNAL) ====================
+// ==================== INSTAGRAM HELPER (NEW - VIA API EKSTERNAL) ====================
 async function ambilDataInstagram(url) {
-    const apiUrl = `https://api.apocalypse.web.id/download/igdl?url=${encodeURIComponent(url)}`;
+    // GANTI ENDPOINT DI SINI
+    const apiUrl = `https://api.akuari.my.id/downloader/ig?url=${encodeURIComponent(url)}`;
     try {
         const response = await axios.get(apiUrl, { timeout: 15000 });
         return response.data;
@@ -203,25 +204,23 @@ app.get('/instagram', async (req, res) => {
     }
     try {
         const result = await ambilDataInstagram(url);
+        // API baru ini langsung punya struktur { status, data }
         if (!result.status) {
-            return res.status(500).json({ status: false, error: result.error || 'Unknown error' });
+            return res.status(500).json({ status: false, error: result.error || 'Gagal mengambil data dari API eksternal' });
         }
-        const data = result.result;
-        const medias = data.medias || [];
-        const videoHD = medias.find(m => m.type === 'video');
-        
-        // Siapkan response JSON
+        const data = result.data;
+        // Format data dari API ini berbeda, kita sesuaikan dengan output yang diharapkan frontend
         res.json({
             status: true,
             result: {
-                author: data.author || 'Tidak diketahui',
-                caption: data.title || 'Tidak ada caption',
-                views: data.view_count || 0,
-                likes: data.like_count || 0,
+                author: data.username || data.author || 'Tidak diketahui',
+                caption: data.caption || 'Tidak ada caption',
+                views: data.views || data.play_count || 0,
+                likes: data.like || data.like_count || 0,
                 duration: data.duration || 0,
-                source: data.source || 'Instagram',
+                source: 'Instagram',
                 thumbnail: data.thumbnail || null,
-                videoUrl: videoHD ? videoHD.url : null
+                videoUrl: data.video || data.url || null
             }
         });
     } catch (error) {
@@ -1052,7 +1051,7 @@ slider.addEventListener('touchend',e=>{if(!isSwiping)return;isSwiping=false;cons
 }
 startSlider(); setupSlider();
 
-// ==================== INSTAGRAM ====================
+// ==================== INSTAGRAM (UPDATED) ====================
 async function testInstagram() {
   const urlInput = document.getElementById('instagramUrl').value.trim();
   if (!urlInput) return alert('Masukkan URL Instagram!');
