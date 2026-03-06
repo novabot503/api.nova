@@ -1,6 +1,5 @@
 const express = require('express');
 const axios = require('axios');
-const CryptoJS = require('crypto-js');
 const cloudscraper = require('cloudscraper');
 const https = require('https');
 const config = require('./setting.js');
@@ -46,55 +45,15 @@ async function sendErrorToTelegram(error) {
   }
 }
 
-// ==================== INSTAGRAM HELPER ====================
-async function ambilWaktuServer() {
-  try {
-    const { data } = await axios.get('https://sssinstagram.com/msec', { timeout: 5000 });
-    return Math.floor(data.msec * 1000);
-  } catch (error) {
-    console.log('Gagal ambil waktu server, pake fallback Date.now()');
-    return Date.now();
-  }
-}
-
-async function bikinSignature(url, secretKey, timestamp) {
-  const waktuDisesuaikan = Date.now() - (timestamp ? Date.now() - timestamp : 0);
-  const teksHash = `${url}${waktuDisesuaikan}${secretKey}`;
-  const hash = CryptoJS.SHA256(teksHash).toString(CryptoJS.enc.Hex);
-  return { signature: hash, waktuDisesuaikan, timestamp };
-}
-
+// ==================== INSTAGRAM HELPER (via akuari.my.id) ====================
 async function ambilDataInstagram(url) {
-  const secretKey = '19e08ff42f18559b51825685d917c5c9e9d89f8a5c1ab147f820f46e94c3df26';
-  const timestamp = await ambilWaktuServer();
-  const { signature, waktuDisesuaikan } = await bikinSignature(url, secretKey, timestamp);
-
-  const dataRequest = {
-    url,
-    ts: waktuDisesuaikan,
-    _ts: 1739186038417,
-    _tsc: timestamp ? Date.now() - timestamp : 0,
-    _s: signature
-  };
-
-  const headers = {
-    'Accept': 'application/json, text/plain, */*',
-    'Content-Type': 'application/json',
-    'User-Agent': 'Mozilla/5.0',
-    'Referer': 'https://sssinstagram.com/',
-    'Origin': 'https://sssinstagram.com/'
-  };
-
+  const apiUrl = `https://api.akuari.my.id/downloader/ig?url=${encodeURIComponent(url)}`;
   try {
-    const response = await axios.post('https://sssinstagram.com/api/convert', dataRequest, {
-      headers,
-      timeout: 10000
-    });
-    console.log('Response from sssinstagram:', JSON.stringify(response.data, null, 2));
+    const response = await axios.get(apiUrl, { timeout: 15000 });
     return response.data;
   } catch (error) {
-    console.error('Error detail from sssinstagram:', error.message);
-    return { error: 'Gagal ambil data', details: error.message };
+    console.error('Instagram API error:', error.message);
+    return { status: false, error: 'Gagal mengambil data dari Instagram' };
   }
 }
 
@@ -236,8 +195,7 @@ async function saveweb2zip(url, options = {}) {
     }
 }
 
-// ==================== TELEGRAM HELPER (PAKAI COOKIE, MIRIP TIKTOK) ====================
-// Menggunakan API eksternal yang stabil (akuari.my.id) sebagai pengganti cookie manual
+// ==================== TELEGRAM HELPER (via akuari.my.id) ====================
 async function ambilDataTelegram(url) {
     const apiUrl = `https://api.akuari.my.id/downloader/telegram?url=${encodeURIComponent(url)}`;
     try {
@@ -257,35 +215,12 @@ app.get('/instagram', async (req, res) => {
     }
     try {
         const result = await ambilDataInstagram(url);
-        if (result.error) {
-            return res.status(500).json({ status: false, error: result.details || result.error, raw: result });
+        if (!result.status) {
+            return res.status(500).json({ status: false, error: result.error || 'Gagal mengambil data' });
         }
-        if (Array.isArray(result)) {
-            const output = result.map(item => ({
-                username: item.meta?.username || null,
-                likes: item.meta?.like_count || 0,
-                comments: item.meta?.comment_count || 0,
-                caption: item.meta?.title || null,
-                type: item.url?.[0]?.ext || null,
-                download_url: item.url?.[0]?.url || null,
-                thumbnail: item.thumb || null
-            }));
-            return res.json({ status: true, result: output });
-        } else if (result.data) {
-            const data = Array.isArray(result.data) ? result.data : [result.data];
-            const output = data.map(item => ({
-                username: item.username || item.meta?.username || null,
-                likes: item.likes || item.meta?.like_count || 0,
-                comments: item.comments || item.meta?.comment_count || 0,
-                caption: item.caption || item.meta?.title || null,
-                type: item.type || item.url?.[0]?.ext || null,
-                download_url: item.download_url || item.url?.[0]?.url || null,
-                thumbnail: item.thumbnail || item.thumb || null
-            }));
-            return res.json({ status: true, result: output });
-        } else {
-            return res.json({ status: true, message: 'Format data tidak dikenal', raw: result });
-        }
+        // API akuari.my.id mengembalikan { status: true, data: [...] } atau { status: true, result: [...] }
+        const data = result.data || result.result || [];
+        res.json({ status: true, result: data });
     } catch (error) {
         console.error('Instagram error:', error);
         await sendErrorToTelegram(error);
@@ -486,8 +421,13 @@ app.get('/bratvid', async (req, res) => {
 });
 
 // ==================== HALAMAN UTAMA ====================
-app.get('/', (req, res) => {
-  const html = `<!DOCTYPE html>
+app.get('/', async (req, res) => {
+  try {
+    const safeUrl = config.URL || 'https://novabot.vercel.app';
+    const safeVersi = config.VERSI_WEB || '1.0';
+    const safeDeveloper = config.DEVELOPER || '@Novabot403';
+
+    const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
@@ -496,7 +436,7 @@ app.get('/', (req, res) => {
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
 <meta property="og:type" content="website">
-<meta property="og:url" content="${config.URL}">
+<meta property="og:url" content="${safeUrl}">
 <meta property="og:title" content="NovaBot API">
 <meta property="og:description" content="API untuk bot WhatsApp Novabot">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&family=VT323&display=swap" rel="stylesheet">
@@ -927,7 +867,7 @@ body {
   <div class="lux-section-title">Latest News</div>
   <div class="slider-container" id="newsSlider">
     <div class="slider-track">
-      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Novabot API v${config.VERSI_WEB}</h3><p>API siap digunakan</p></div></div>
+      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Novabot API v${safeVersi}</h3><p>API siap digunakan</p></div></div>
       <div class="slide"><video src="https://files.catbox.moe/sbwa8f.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Mudah & Cepat</h3><p>Integrasi dengan bot Anda</p></div></div>
     </div>
   </div>
@@ -938,7 +878,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/waifu</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -951,7 +891,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/nsfw</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
       </div>
       <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -964,7 +904,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/webzip?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
       </div>
       <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
       <div class="input-group">
@@ -978,7 +918,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/tiktok?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
       </div>
       <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
       <div class="input-group">
@@ -992,7 +932,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/instagram?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/instagram?url=', 'instagram')"><i class="fas fa-copy"></i> instagram</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/instagram?url=', 'instagram')"><i class="fas fa-copy"></i> instagram</button>
       </div>
       <div class="api-desc">Download video/foto Instagram. Parameter ?url= (link post/reel)</div>
       <div class="input-group">
@@ -1006,7 +946,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/telegram?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/telegram?url=', 'telegram')"><i class="fas fa-copy"></i> telegram</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/telegram?url=', 'telegram')"><i class="fas fa-copy"></i> telegram</button>
       </div>
       <div class="api-desc">Download video/file dari Telegram. Parameter ?url= (link publik)</div>
       <div class="input-group">
@@ -1020,7 +960,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/brat?text=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
       </div>
       <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -1034,7 +974,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/pinterest?q=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
       </div>
       <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
       <div class="input-group">
@@ -1048,7 +988,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/bratvid?text=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
+        <button class="copy-btn" onclick="copyText('${safeUrl}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
       </div>
       <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -1060,7 +1000,7 @@ body {
   </div>
 
   <div class="footer">
-    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${config.DEVELOPER} • v${config.VERSI_WEB}</p>
+    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${safeDeveloper} • v${safeVersi}</p>
   </div>
 </div>
 
@@ -1133,52 +1073,50 @@ async function testInstagram() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/instagram?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${safeUrl}' + '/instagram?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
     const jsonStr = JSON.stringify(data, null, 2);
 
     if (data.status) {
-      let html = `
+      let html = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
           <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-      `;
+      \`;
       if (data.result && Array.isArray(data.result) && data.result.length > 0) {
         data.result.forEach((item, index) => {
-          html += `<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">`;
-          html += `<p><strong>Item ${index+1}</strong></p>`;
-          if (item.username) html += `<p><i class="fas fa-user"></i> ${item.username}</p>`;
-          if (item.likes) html += `<p><i class="fas fa-heart"></i> ${item.likes} likes</p>`;
-          if (item.comments) html += `<p><i class="fas fa-comment"></i> ${item.comments} komentar</p>`;
-          if (item.caption) html += `<p><strong>Caption:</strong> ${item.caption.substring(0,100)}${item.caption.length>100?'...':''}</p>`;
-          if (item.thumbnail) html += `<img src="${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
+          html += \`<div style="margin-top: 10px; padding: 8px; background: #1a1f30; border-radius: 5px;">\`;
+          html += \`<p><strong>Item \${index+1}</strong></p>\`;
+          if (item.username) html += \`<p><i class="fas fa-user"></i> \${item.username}</p>\`;
+          if (item.likes) html += \`<p><i class="fas fa-heart"></i> \${item.likes} likes</p>\`;
+          if (item.comments) html += \`<p><i class="fas fa-comment"></i> \${item.comments} komentar</p>\`;
+          if (item.caption) html += \`<p><strong>Caption:</strong> \${item.caption.substring(0,100)}\${item.caption.length>100?'...':''}</p>\`;
+          if (item.thumbnail) html += \`<img src="\${item.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
           if (item.download_url) {
-            html += `<p><a href="${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download ${item.type || 'media'}</a></p>`;
+            html += \`<p><a href="\${item.download_url}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download \${item.type || 'media'}</a></p>\`;
           }
-          html += `</div>`;
+          html += \`</div>\`;
         });
-      } else if (data.raw) {
-        html += `<p><strong>Data mentah dari API:</strong></p><pre>${JSON.stringify(data.raw, null, 2)}</pre>`;
       } else {
-        html += `<pre>${jsonStr}</pre>`;
+        html += \`<pre>\${jsonStr}</pre>\`;
       }
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = `
+      respDiv.innerHTML = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">${status}</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <div class="badge error">\${status}</div>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <pre>${jsonStr}</pre>
-      `;
+        <pre>\${jsonStr}</pre>
+      \`;
       respDiv.classList.add('error');
     }
   } catch (err) {
-    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
 }
@@ -1191,43 +1129,43 @@ async function testTelegram() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/telegram?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${safeUrl}' + '/telegram?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
     const jsonStr = JSON.stringify(data, null, 2);
     if (data.status) {
-      let html = `
+      let html = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
           <div class="badge success">200 OK</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-      `;
+      \`;
       const r = data.result;
       if (r) {
-        if (r.title) html += `<p><strong>Judul:</strong> ${r.title}</p>`;
-        if (r.author) html += `<p><strong>Author:</strong> ${r.author}</p>`;
-        if (r.thumbnail) html += `<img src="${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">`;
+        if (r.title) html += \`<p><strong>Judul:</strong> \${r.title}</p>\`;
+        if (r.author) html += \`<p><strong>Author:</strong> \${r.author}</p>\`;
+        if (r.thumbnail) html += \`<img src="\${r.thumbnail}" style="max-width:150px; border-radius:5px; margin:5px 0;">\`;
         if (r.download_url || r.videoUrl) {
           const dl = r.download_url || r.videoUrl;
-          html += `<p><a href="${dl}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download</a></p>`;
+          html += \`<p><a href="\${dl}" target="_blank" style="color:#00ff88;"><i class="fas fa-download"></i> Download</a></p>\`;
         }
       }
-      html += `<pre>${jsonStr}</pre>`;
+      html += \`<pre>\${jsonStr}</pre>\`;
       respDiv.innerHTML = html;
       respDiv.classList.add('success');
     } else {
-      respDiv.innerHTML = `
+      respDiv.innerHTML = \`
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-          <div class="badge error">${status}</div>
-          <button class="copy-json-btn" onclick="copyText('${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
+          <div class="badge error">\${status}</div>
+          <button class="copy-json-btn" onclick="copyText('\${encodeURIComponent(jsonStr)}', 'json')"><i class="fas fa-copy"></i> Copy JSON</button>
         </div>
-        <pre>${jsonStr}</pre>
-      `;
+        <pre>\${jsonStr}</pre>
+      \`;
       respDiv.classList.add('error');
     }
   } catch (err) {
-    respDiv.innerHTML = `<div class="badge error">Network Error</div><pre>${err.message}</pre>`;
+    respDiv.innerHTML = \`<div class="badge error">Network Error</div><pre>\${err.message}</pre>\`;
     respDiv.classList.add('error');
   }
 }
@@ -1240,7 +1178,7 @@ async function testPinterest() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/pinterest?q=' + encodeURIComponent(query);
+    const apiUrl = '${safeUrl}' + '/pinterest?q=' + encodeURIComponent(query);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1287,7 +1225,7 @@ async function testWaifu() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${config.URL}' + '/waifu');
+    const res = await fetch('${safeUrl}' + '/waifu');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1307,7 +1245,7 @@ async function testNsfw() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${config.URL}' + '/nsfw');
+    const res = await fetch('${safeUrl}' + '/nsfw');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1329,7 +1267,7 @@ async function testWebzip() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/webzip?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${safeUrl}' + '/webzip?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1356,7 +1294,7 @@ async function testTiktok() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/tiktok?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${safeUrl}' + '/tiktok?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1403,7 +1341,7 @@ async function testBrat() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/brat?text=' + encodeURIComponent(textInput);
+    const apiUrl = '${safeUrl}' + '/brat?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1431,7 +1369,7 @@ async function testBratvid() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
+    const apiUrl = '${safeUrl}' + '/bratvid?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1466,9 +1404,14 @@ document.addEventListener('keydown',e=>{
 });
 </script>
 </body>
-</html>
-  `;
-  res.send(html);
+</html>`;
+    
+    res.send(html);
+  } catch (error) {
+    console.error('Error rendering homepage:', error);
+    await sendErrorToTelegram(error);
+    res.status(500).send('Internal Server Error. Please try again later.');
+  }
 });
 
 // ==================== START SERVER ====================
