@@ -1,3 +1,7 @@
+// ==================== index.js ====================
+// Novabot API - Versi Terstruktur dengan Pengelompokan Jelas
+// Semua fitur dan tampilan tetap sama, internal dirapikan dan ditambah notifikasi error ke Telegram.
+
 const express = require('express');
 const axios = require('axios');
 const cloudscraper = require('cloudscraper');
@@ -21,11 +25,15 @@ const DEVELOPER = config.DEVELOPER || '@Novabot403';
 const BASE_URL = config.URL || `http://${HOST}:${PORT}`;
 const TELEGRAM_TOKEN = config.TELEGRAM_TOKEN;
 const OWNER_ID = config.OWNER_ID;
+
+// HTTPS Agent untuk Pinterest
 const httpsAgent = new https.Agent({
-rejectUnauthorized: true,
-maxVersion: 'TLSv1.3',
-minVersion: 'TLSv1.2',
+  rejectUnauthorized: true,
+  maxVersion: 'TLSv1.3',
+  minVersion: 'TLSv1.2',
 });
+
+// Daftar tipe NSFW
 const NSFW_TYPES = ['blowjob', 'neko', 'trap', 'waifu'];
 
 // ==================== MIDDLEWARE GLOBAL ====================
@@ -35,65 +43,95 @@ app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
+
+// Rate limiting per IP (khusus endpoint API)
 const limiter = rateLimit({
-windowMs: 15 * 60 * 1000,
-max: 100,
-message: { status: false, error: 'Terlalu banyak permintaan, coba lagi nanti.' },
-standardHeaders: true,
-legacyHeaders: false,
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { status: false, error: 'Terlalu banyak permintaan, coba lagi nanti.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api', limiter);
 
 // ==================== FUNGSI HELPER ====================
+
+/**
+ * Mengirim notifikasi error ke Telegram
+ */
 async function sendErrorToTelegram(error, req = null) {
-if (!TELEGRAM_TOKEN || !OWNER_ID) return;
-const ip = req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress) : 'unknown';
-const endpoint = req ? `${req.method} ${req.originalUrl}` : 'unknown';
-const message = `❌ *API Error*\n\n` +
-`*Endpoint:* ${endpoint}\n` +
-`*IP:* ${ip}\n` +
-`*Time:* ${new Date().toLocaleString('id-ID')}\n` +
-`*Message:* ${error.message}\n` +
-`*Stack:* ${error.stack || ''}`;
-try {
-await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-chat_id: OWNER_ID,
-text: message,
-parse_mode: 'Markdown'
-});
-} catch (e) {
-console.error('Gagal kirim ke Telegram:', e.message);
+  if (!TELEGRAM_TOKEN || !OWNER_ID) return;
+  const ip = req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress) : 'unknown';
+  const endpoint = req ? `${req.method} ${req.originalUrl}` : 'unknown';
+  const message = `❌ *API Error*\n\n` +
+    `*Endpoint:* ${endpoint}\n` +
+    `*IP:* ${ip}\n` +
+    `*Time:* ${new Date().toLocaleString('id-ID')}\n` +
+    `*Message:* ${error.message}\n` +
+    `*Stack:* ${error.stack || ''}`;
+  try {
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      chat_id: OWNER_ID,
+      text: message,
+      parse_mode: 'Markdown'
+    });
+  } catch (e) {
+    console.error('Gagal kirim ke Telegram:', e.message);
+  }
 }
-}
+
+/**
+ * Fetch JSON dari URL
+ */
 async function fetchJson(url) {
-const res = await axios.get(url);
-return res.data;
+  const res = await axios.get(url);
+  return res.data;
 }
+
+/**
+ * Ambil buffer dari URL
+ */
 async function getBuffer(url) {
-const res = await axios.get(url, { responseType: 'arraybuffer' });
-return Buffer.from(res.data);
+  const res = await axios.get(url, { responseType: 'arraybuffer' });
+  return Buffer.from(res.data);
 }
+
+/**
+ * Format angka (K, M)
+ */
 function formatNumber(num) {
-if (!num) return '0';
-if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
-if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
-return num.toString();
+  if (!num) return '0';
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
+  if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
+  return num.toString();
 }
+
+/**
+ * Format durasi (detik ke MM:SS)
+ */
 function formatDuration(seconds) {
-if (!seconds) return 'N/A';
-const mins = Math.floor(seconds / 60);
-const secs = seconds % 60;
-return `${mins}:${secs.toString().padStart(2, '0')}`;
+  if (!seconds) return 'N/A';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Format uptime
+ */
 function formatUptime(seconds) {
-const d = Math.floor(seconds / 86400);
-const h = Math.floor((seconds % 86400) / 3600);
-const m = Math.floor((seconds % 3600) / 60);
-const s = Math.floor(seconds % 60);
-return `${d}d ${h}h ${m}m ${s}s`;
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return `${d}d ${h}h ${m}m ${s}s`;
 }
+
+/**
+ * Validasi URL
+ */
 function isValidUrl(url) {
-return validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] });
+  return validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] });
 }
 
 // ==================== SERVICE: PINTEREST ====================
@@ -429,6 +467,8 @@ app.get('/bratvid', async (req, res) => {
 });
 
 // ==================== HALAMAN UTAMA (HTML) ====================
+// HTML diambil persis dari kode asli, hanya variabel BASE_URL, VERSION, DEVELOPER digunakan.
+// Semua backtick di dalam script telah di-escape agar tidak mengganggu template literal server.
 app.get('/', (req, res) => {
   const html = `<!DOCTYPE html>
 <html lang="id">
@@ -1205,89 +1245,92 @@ async function testTiktok() {
 
 // ==================== BRAT ====================
 async function testBrat() {
-const textInput = document.getElementById('bratText').value.trim();
-if (!textInput) return alert('Masukkan teks!');
-const respDiv = document.getElementById('bratResponse');
-respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-respDiv.className = 'response-container show';
-try {
-const apiUrl = '${BASE_URL}' + '/brat?text=' + encodeURIComponent(textInput);
-const res = await fetch(apiUrl);
-if (!res.ok) {
-const errText = await res.text();
-throw new Error(\`HTTP \${res.status}: \${errText}\`);
-}
-const blob = await res.blob();
-const url = URL.createObjectURL(blob);
-respDiv.innerHTML = \`
-<div class="badge success">200 OK</div>
-<img src="\${url}" alt="Brat Image">
-\`;
-respDiv.classList.add('success');
-} catch (err) {
-console.error('Brat fetch error:', err);
-respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
-respDiv.classList.add('error');
-}
+  const textInput = document.getElementById('bratText').value.trim();
+  if (!textInput) return alert('Masukkan teks!');
+  const respDiv = document.getElementById('bratResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = '${BASE_URL}' + '/brat?text=' + encodeURIComponent(textInput);
+    const res = await fetch(apiUrl);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(\`HTTP \${res.status}: \${errText}\`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    respDiv.innerHTML = \`
+      <div class="badge success">200 OK</div>
+      <img src="\${url}" alt="Brat Image">
+    \`;
+    respDiv.classList.add('success');
+  } catch (err) {
+    console.error('Brat fetch error:', err);
+    respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
+  }
 }
 
 // ==================== BRATVID ====================
 async function testBratvid() {
-const textInput = document.getElementById('bratvidText').value.trim();
-if (!textInput) return alert('Masukkan teks!');
-const respDiv = document.getElementById('bratvidResponse');
-respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-respDiv.className = 'response-container show';
-try {
-const apiUrl = '${BASE_URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
-const res = await fetch(apiUrl);
-if (!res.ok) {
-const errText = await res.text();
-throw new Error(\`HTTP \${res.status}: \${errText}\`);
-}
-const blob = await res.blob();
-const url = URL.createObjectURL(blob);
-respDiv.innerHTML = \`
-<div class="badge success">200 OK</div>
-<img src="\${url}" alt="Bratvid Image">
-\`;
-respDiv.classList.add('success');
-} catch (err) {
-console.error('Bratvid fetch error:', err);
-respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
-respDiv.classList.add('error');
-}
+  const textInput = document.getElementById('bratvidText').value.trim();
+  if (!textInput) return alert('Masukkan teks!');
+  const respDiv = document.getElementById('bratvidResponse');
+  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+  respDiv.className = 'response-container show';
+  try {
+    const apiUrl = '${BASE_URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
+    const res = await fetch(apiUrl);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(\`HTTP \${res.status}: \${errText}\`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    respDiv.innerHTML = \`
+      <div class="badge success">200 OK</div>
+      <img src="\${url}" alt="Bratvid Image">
+    \`;
+    respDiv.classList.add('success');
+  } catch (err) {
+    console.error('Bratvid fetch error:', err);
+    respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
+    respDiv.classList.add('error');
+  }
 }
 
 // ==================== COPY TEXT ====================
 function copyText(text, label) {
-if (label === 'json') text = decodeURIComponent(text);
-navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
+  if (label === 'json') text = decodeURIComponent(text);
+  navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
 }
+
 document.addEventListener('DOMContentLoaded',()=>{
-document.querySelectorAll('video').forEach(v=>v.play().catch(()=>{}));
+  document.querySelectorAll('video').forEach(v=>v.play().catch(()=>{}));
 });
 document.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
-if(e.key==='F12'||(e.ctrlKey&&e.shiftKey&&e.key==='I')||(e.ctrlKey&&e.key==='U'))e.preventDefault();
+  if(e.key==='F12'||(e.ctrlKey&&e.shiftKey&&e.key==='I')||(e.ctrlKey&&e.key==='U'))e.preventDefault();
 });
 </script>
 </body>
 </html>
-`;
-res.send(html);
+  `;
+  res.send(html);
 });
 
 // ==================== ERROR HANDLER GLOBAL ====================
+
 app.use((err, req, res, next) => {
-console.error('Unhandled error:', err.stack);
-sendErrorToTelegram(err, req);
-res.status(500).json({ status: false, error: 'Terjadi kesalahan internal server.' });
+  console.error('Unhandled error:', err.stack);
+  sendErrorToTelegram(err, req);
+  res.status(500).json({ status: false, error: 'Terjadi kesalahan internal server.' });
 });
 
 // ==================== START SERVER ====================
+
 app.listen(PORT, HOST, () => {
-console.log(`
+  console.log(`
 \x1b[1m\x1b[34m╔╗ ╦  ╔═\x1b[0m╗╔═╗╔═╗╦═╗╔═╗ \x1b[31m
 \x1b[1m\x1b[34m╠╩╗║  ╠═╣╔═╝\x1b[0m║╣ ╠╦╝╚═╗ \x1b[31m
 \x1b[1m\x1b[34m╚═╝╩═╝╩ ╩╚═╝╚═╝╩\x1b[0m╚═╚═╝ \x1b[31m
