@@ -1,7 +1,3 @@
-// ==================== index.js ====================
-// Novabot API - Versi Terstruktur & Canggih (Single File)
-// Semua fitur dan tampilan tetap sama, hanya internal yang dirapikan.
-
 const express = require('express');
 const axios = require('axios');
 const cloudscraper = require('cloudscraper');
@@ -12,9 +8,9 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const validator = require('validator');
-const config = require('./setting.js'); // Tetap menggunakan setting.js
+const config = require('./setting.js');
 
-// Inisialisasi Express
+// ==================== INISIALISASI ====================
 const app = express();
 const PORT = config.PORT || 8080;
 const HOST = config.HOST || 'localhost';
@@ -25,121 +21,83 @@ const DEVELOPER = config.DEVELOPER || '@Novabot403';
 const BASE_URL = config.URL || `http://${HOST}:${PORT}`;
 const TELEGRAM_TOKEN = config.TELEGRAM_TOKEN;
 const OWNER_ID = config.OWNER_ID;
-
-// HTTPS Agent untuk Pinterest
 const httpsAgent = new https.Agent({
-  rejectUnauthorized: true,
-  maxVersion: 'TLSv1.3',
-  minVersion: 'TLSv1.2',
+rejectUnauthorized: true,
+maxVersion: 'TLSv1.3',
+minVersion: 'TLSv1.2',
 });
-
-// Daftar tipe NSFW
 const NSFW_TYPES = ['blowjob', 'neko', 'trap', 'waifu'];
 
 // ==================== MIDDLEWARE GLOBAL ====================
-app.use(helmet()); // Keamanan header HTTP
-app.use(cors()); // CORS sudah ada
-app.use(compression()); // Kompres respons
+app.use(helmet());
+app.use(cors());
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Logging request (morgan) dengan format sederhana
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
-
-// Rate limiting per IP (mencegah abuse)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 menit
-  max: 100, // maksimal 100 request per window
-  message: { status: false, error: 'Terlalu banyak permintaan, coba lagi nanti.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+windowMs: 15 * 60 * 1000,
+max: 100,
+message: { status: false, error: 'Terlalu banyak permintaan, coba lagi nanti.' },
+standardHeaders: true,
+legacyHeaders: false,
 });
-app.use('/api', limiter); // Terapkan hanya untuk endpoint API
-
-// Middleware untuk mencatat kunjungan ke halaman utama (tanpa mengganggu response)
-app.use((req, res, next) => {
-  if (req.path === '/' && req.method === 'GET') {
-    logUserVisit(req); // Panggil fungsi logging (didefinisikan nanti)
-  }
-  next();
-});
+app.use('/api', limiter);
 
 // ==================== FUNGSI HELPER ====================
-/**
- * Fetch JSON dari URL
- */
+async function sendErrorToTelegram(error, req = null) {
+if (!TELEGRAM_TOKEN || !OWNER_ID) return;
+const ip = req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress) : 'unknown';
+const endpoint = req ? `${req.method} ${req.originalUrl}` : 'unknown';
+const message = `❌ *API Error*\n\n` +
+`*Endpoint:* ${endpoint}\n` +
+`*IP:* ${ip}\n` +
+`*Time:* ${new Date().toLocaleString('id-ID')}\n` +
+`*Message:* ${error.message}\n` +
+`*Stack:* ${error.stack || ''}`;
+try {
+await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+chat_id: OWNER_ID,
+text: message,
+parse_mode: 'Markdown'
+});
+} catch (e) {
+console.error('Gagal kirim ke Telegram:', e.message);
+}
+}
 async function fetchJson(url) {
-  const res = await axios.get(url);
-  return res.data;
+const res = await axios.get(url);
+return res.data;
 }
-
-/**
- * Ambil buffer dari URL
- */
 async function getBuffer(url) {
-  const res = await axios.get(url, { responseType: 'arraybuffer' });
-  return Buffer.from(res.data);
+const res = await axios.get(url, { responseType: 'arraybuffer' });
+return Buffer.from(res.data);
 }
-
-/**
- * Format angka (K, M)
- */
 function formatNumber(num) {
-  if (!num) return '0';
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
-  if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
-  return num.toString();
+if (!num) return '0';
+if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
+if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
+return num.toString();
 }
-
-/**
- * Format durasi (detik ke MM:SS)
- */
 function formatDuration(seconds) {
-  if (!seconds) return 'N/A';
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+if (!seconds) return 'N/A';
+const mins = Math.floor(seconds / 60);
+const secs = seconds % 60;
+return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
-
-/**
- * Format uptime
- */
 function formatUptime(seconds) {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${d}d ${h}h ${m}m ${s}s`;
+const d = Math.floor(seconds / 86400);
+const h = Math.floor((seconds % 86400) / 3600);
+const m = Math.floor((seconds % 3600) / 60);
+const s = Math.floor(seconds % 60);
+return `${d}d ${h}h ${m}m ${s}s`;
 }
-
-/**
- * Log kunjungan user ke Telegram (gantungan dari sendErrorToTelegram)
- * Digunakan untuk mencatat ada user yang mengakses website.
- */
-async function logUserVisit(req) {
-  if (!TELEGRAM_TOKEN || !OWNER_ID) return;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const userAgent = req.headers['user-agent'] || 'Unknown';
-  const message = `👤 *User Visit Website*\n\nIP: ${ip}\nUser-Agent: ${userAgent}\nTime: ${new Date().toLocaleString('id-ID')}`;
-  try {
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-      chat_id: OWNER_ID,
-      text: message,
-      parse_mode: 'Markdown'
-    });
-  } catch (e) {
-    // Gagal kirim notifikasi, diamkan saja
-  }
-}
-
-/**
- * Validasi URL
- */
 function isValidUrl(url) {
-  return validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] });
+return validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] });
 }
 
 // ==================== SERVICE: PINTEREST ====================
+
 async function getPinterestCookies() {
   try {
     const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent });
@@ -211,6 +169,7 @@ async function searchPinterest(query) {
 }
 
 // ==================== SERVICE: WEBZIP ====================
+
 async function saveWeb2Zip(url, options = {}) {
   if (!url) throw new Error('URL diperlukan');
   const targetUrl = url.startsWith('https://') ? url : `https://${url}`;
@@ -221,7 +180,6 @@ async function saveWeb2Zip(url, options = {}) {
     mobileVersion = false
   } = options;
 
-  // Request awal untuk mendapatkan md5
   const response = await cloudscraper.post('https://copier.saveweb2zip.com/api/copySite', {
     json: {
       url: targetUrl,
@@ -240,8 +198,7 @@ async function saveWeb2Zip(url, options = {}) {
 
   const { md5 } = response;
 
-  // Polling status dengan batas waktu dan percobaan
-  const maxAttempts = 60; // 60 detik
+  const maxAttempts = 60;
   let attempts = 0;
   while (attempts < maxAttempts) {
     const process = await cloudscraper.get(`https://copier.saveweb2zip.com/api/getStatus/${md5}`, {
@@ -273,6 +230,7 @@ async function saveWeb2Zip(url, options = {}) {
 }
 
 // ==================== SERVICE: TIKTOK ====================
+
 async function fetchTikTok(url) {
   const response = await axios.post('https://www.tikwm.com/api/', {}, {
     headers: {
@@ -289,10 +247,8 @@ async function fetchTikTok(url) {
   return response.data.data;
 }
 
-// ==================== ROUTER UTAMA (dalam satu file) ====================
-// Kita bisa menggunakan express.Router() untuk pengelompokan, tapi tetap di sini.
+// ==================== ENDPOINT: STATUS API ====================
 
-// ==================== ENDPOINT: Status API ====================
 app.get('/api/status', (req, res) => {
   res.json({
     status: 'ok',
@@ -303,7 +259,8 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ==================== ENDPOINT: Pinterest ====================
+// ==================== ENDPOINT: PINTEREST ====================
+
 app.get('/pinterest', async (req, res) => {
   const { q } = req.query;
   if (!q || typeof q !== 'string') {
@@ -314,11 +271,13 @@ app.get('/pinterest', async (req, res) => {
     res.json({ status: true, result: results });
   } catch (error) {
     console.error('Pinterest error:', error.message);
+    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, error: 'Gagal mengambil data dari Pinterest.' });
   }
 });
 
-// ==================== ENDPOINT: Waifu ====================
+// ==================== ENDPOINT: WAIFU ====================
+
 app.get('/waifu', async (req, res) => {
   try {
     const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
@@ -330,11 +289,13 @@ app.get('/waifu', async (req, res) => {
     res.end(buffer);
   } catch (error) {
     console.error('Waifu error:', error.message);
+    await sendErrorToTelegram(error, req);
     res.status(500).send('Error mengambil gambar waifu.');
   }
 });
 
 // ==================== ENDPOINT: NSFW ====================
+
 app.get('/nsfw', async (req, res) => {
   try {
     const randomType = NSFW_TYPES[Math.floor(Math.random() * NSFW_TYPES.length)];
@@ -347,11 +308,13 @@ app.get('/nsfw', async (req, res) => {
     res.end(buffer);
   } catch (error) {
     console.error('NSFW error:', error.message);
+    await sendErrorToTelegram(error, req);
     res.status(500).send('Error mengambil gambar NSFW.');
   }
 });
 
-// ==================== ENDPOINT: Webzip ====================
+// ==================== ENDPOINT: WEBZIP ====================
+
 app.get('/webzip', async (req, res) => {
   const { url } = req.query;
   if (!url) {
@@ -377,11 +340,13 @@ app.get('/webzip', async (req, res) => {
     });
   } catch (error) {
     console.error('Webzip error:', error.message);
+    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, error: error.message });
   }
 });
 
-// ==================== ENDPOINT: TikTok ====================
+// ==================== ENDPOINT: TIKTOK ====================
+
 app.get('/tiktok', async (req, res) => {
   const { url } = req.query;
   if (!url || !url.includes('tiktok.com')) {
@@ -416,11 +381,13 @@ app.get('/tiktok', async (req, res) => {
     });
   } catch (error) {
     console.error('TikTok error:', error.message);
+    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, error: 'Gagal memproses permintaan TikTok.' });
   }
 });
 
-// ==================== ENDPOINT: Brat ====================
+// ==================== ENDPOINT: BRAT ====================
+
 app.get('/brat', async (req, res) => {
   const { text } = req.query;
   if (!text || typeof text !== 'string') {
@@ -435,11 +402,13 @@ app.get('/brat', async (req, res) => {
     res.send(buffer);
   } catch (error) {
     console.error('Brat error:', error.message);
+    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, message: 'Gagal mengambil gambar brat.' });
   }
 });
 
-// ==================== ENDPOINT: Bratvid ====================
+// ==================== ENDPOINT: BRATVID ====================
+
 app.get('/bratvid', async (req, res) => {
   const { text } = req.query;
   if (!text || typeof text !== 'string') {
@@ -454,13 +423,12 @@ app.get('/bratvid', async (req, res) => {
     res.send(buffer);
   } catch (error) {
     console.error('Bratvid error:', error.message);
+    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, message: 'Gagal mengambil gambar bratvid.' });
   }
 });
 
 // ==================== HALAMAN UTAMA (HTML) ====================
-// HTML diambil persis dari kode asli, hanya bagian script yang sedikit disesuaikan
-// untuk menggunakan BASE_URL yang sudah didefinisikan.
 app.get('/', (req, res) => {
   const html = `<!DOCTYPE html>
 <html lang="id">
@@ -1237,89 +1205,89 @@ async function testTiktok() {
 
 // ==================== BRAT ====================
 async function testBrat() {
-  const textInput = document.getElementById('bratText').value.trim();
-  if (!textInput) return alert('Masukkan teks!');
-  const respDiv = document.getElementById('bratResponse');
-  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-  respDiv.className = 'response-container show';
-  try {
-    const apiUrl = '${BASE_URL}' + '/brat?text=' + encodeURIComponent(textInput);
-    const res = await fetch(apiUrl);
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(\`HTTP \${res.status}: \${errText}\`);
-    }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    respDiv.innerHTML = \`
-      <div class="badge success">200 OK</div>
-      <img src="\${url}" alt="Brat Image">
-    \`;
-    respDiv.classList.add('success');
-  } catch (err) {
-    console.error('Brat fetch error:', err);
-    respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
-    respDiv.classList.add('error');
-  }
+const textInput = document.getElementById('bratText').value.trim();
+if (!textInput) return alert('Masukkan teks!');
+const respDiv = document.getElementById('bratResponse');
+respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+respDiv.className = 'response-container show';
+try {
+const apiUrl = '${BASE_URL}' + '/brat?text=' + encodeURIComponent(textInput);
+const res = await fetch(apiUrl);
+if (!res.ok) {
+const errText = await res.text();
+throw new Error(\`HTTP \${res.status}: \${errText}\`);
+}
+const blob = await res.blob();
+const url = URL.createObjectURL(blob);
+respDiv.innerHTML = \`
+<div class="badge success">200 OK</div>
+<img src="\${url}" alt="Brat Image">
+\`;
+respDiv.classList.add('success');
+} catch (err) {
+console.error('Brat fetch error:', err);
+respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
+respDiv.classList.add('error');
+}
 }
 
 // ==================== BRATVID ====================
 async function testBratvid() {
-  const textInput = document.getElementById('bratvidText').value.trim();
-  if (!textInput) return alert('Masukkan teks!');
-  const respDiv = document.getElementById('bratvidResponse');
-  respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-  respDiv.className = 'response-container show';
-  try {
-    const apiUrl = '${BASE_URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
-    const res = await fetch(apiUrl);
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(\`HTTP \${res.status}: \${errText}\`);
-    }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    respDiv.innerHTML = \`
-      <div class="badge success">200 OK</div>
-      <img src="\${url}" alt="Bratvid Image">
-    \`;
-    respDiv.classList.add('success');
-  } catch (err) {
-    console.error('Bratvid fetch error:', err);
-    respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
-    respDiv.classList.add('error');
-  }
+const textInput = document.getElementById('bratvidText').value.trim();
+if (!textInput) return alert('Masukkan teks!');
+const respDiv = document.getElementById('bratvidResponse');
+respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+respDiv.className = 'response-container show';
+try {
+const apiUrl = '${BASE_URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
+const res = await fetch(apiUrl);
+if (!res.ok) {
+const errText = await res.text();
+throw new Error(\`HTTP \${res.status}: \${errText}\`);
+}
+const blob = await res.blob();
+const url = URL.createObjectURL(blob);
+respDiv.innerHTML = \`
+<div class="badge success">200 OK</div>
+<img src="\${url}" alt="Bratvid Image">
+\`;
+respDiv.classList.add('success');
+} catch (err) {
+console.error('Bratvid fetch error:', err);
+respDiv.innerHTML = \`<div class="badge error">Error</div><pre>\${err.message}</pre>\`;
+respDiv.classList.add('error');
+}
 }
 
 // ==================== COPY TEXT ====================
 function copyText(text, label) {
-  if (label === 'json') text = decodeURIComponent(text);
-  navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
+if (label === 'json') text = decodeURIComponent(text);
+navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
 }
-
 document.addEventListener('DOMContentLoaded',()=>{
-  document.querySelectorAll('video').forEach(v=>v.play().catch(()=>{}));
+document.querySelectorAll('video').forEach(v=>v.play().catch(()=>{}));
 });
 document.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
-  if(e.key==='F12'||(e.ctrlKey&&e.shiftKey&&e.key==='I')||(e.ctrlKey&&e.key==='U'))e.preventDefault();
+if(e.key==='F12'||(e.ctrlKey&&e.shiftKey&&e.key==='I')||(e.ctrlKey&&e.key==='U'))e.preventDefault();
 });
 </script>
 </body>
 </html>
-  `;
-  res.send(html);
+`;
+res.send(html);
 });
 
 // ==================== ERROR HANDLER GLOBAL ====================
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.stack);
-  res.status(500).json({ status: false, error: 'Terjadi kesalahan internal server.' });
+console.error('Unhandled error:', err.stack);
+sendErrorToTelegram(err, req);
+res.status(500).json({ status: false, error: 'Terjadi kesalahan internal server.' });
 });
 
 // ==================== START SERVER ====================
 app.listen(PORT, HOST, () => {
-  console.log(`
+console.log(`
 \x1b[1m\x1b[34m╔╗ ╦  ╔═\x1b[0m╗╔═╗╔═╗╦═╗╔═╗ \x1b[31m
 \x1b[1m\x1b[34m╠╩╗║  ╠═╣╔═╝\x1b[0m║╣ ╠╦╝╚═╗ \x1b[31m
 \x1b[1m\x1b[34m╚═╝╩═╝╩ ╩╚═╝╚═╝╩\x1b[0m╚═╚═╝ \x1b[31m
