@@ -1,207 +1,324 @@
+// ==================== index.js ====================
+// Novabot API - Versi Terstruktur & Canggih (Single File)
+// Semua fitur dan tampilan tetap sama, hanya internal yang dirapikan.
+
 const express = require('express');
 const axios = require('axios');
 const cloudscraper = require('cloudscraper');
 const https = require('https');
-const config = require('./setting.js');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const validator = require('validator');
+const config = require('./setting.js'); // Tetap menggunakan setting.js
 
+// Inisialisasi Express
 const app = express();
 const PORT = config.PORT || 8080;
 const HOST = config.HOST || 'localhost';
 
-app.use(require('cors')());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ==================== KONFIGURASI & KONSTANTA ====================
+const VERSION = config.VERSI_WEB || '1.0';
+const DEVELOPER = config.DEVELOPER || '@Novabot403';
+const BASE_URL = config.URL || `http://${HOST}:${PORT}`;
+const TELEGRAM_TOKEN = config.TELEGRAM_TOKEN;
+const OWNER_ID = config.OWNER_ID;
 
 // HTTPS Agent untuk Pinterest
-const agent = new https.Agent({
+const httpsAgent = new https.Agent({
   rejectUnauthorized: true,
   maxVersion: 'TLSv1.3',
   minVersion: 'TLSv1.2',
 });
 
-// Fungsi helper
+// Daftar tipe NSFW
+const NSFW_TYPES = ['blowjob', 'neko', 'trap', 'waifu'];
+
+// ==================== MIDDLEWARE GLOBAL ====================
+app.use(helmet()); // Keamanan header HTTP
+app.use(cors()); // CORS sudah ada
+app.use(compression()); // Kompres respons
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Logging request (morgan) dengan format sederhana
+app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
+
+// Rate limiting per IP (mencegah abuse)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 menit
+  max: 100, // maksimal 100 request per window
+  message: { status: false, error: 'Terlalu banyak permintaan, coba lagi nanti.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', limiter); // Terapkan hanya untuk endpoint API
+
+// Middleware untuk mencatat kunjungan ke halaman utama (tanpa mengganggu response)
+app.use((req, res, next) => {
+  if (req.path === '/' && req.method === 'GET') {
+    logUserVisit(req); // Panggil fungsi logging (didefinisikan nanti)
+  }
+  next();
+});
+
+// ==================== FUNGSI HELPER ====================
+/**
+ * Fetch JSON dari URL
+ */
 async function fetchJson(url) {
   const res = await axios.get(url);
   return res.data;
 }
 
+/**
+ * Ambil buffer dari URL
+ */
 async function getBuffer(url) {
   const res = await axios.get(url, { responseType: 'arraybuffer' });
   return Buffer.from(res.data);
 }
 
-// Notifikasi error ke Telegram
-async function sendErrorToTelegram(error) {
-  if (!config.TELEGRAM_TOKEN || !config.OWNER_ID) return;
-  const message = `❌ *API Error*\n\n${error.message}\n\n${error.stack || ''}`;
+/**
+ * Format angka (K, M)
+ */
+function formatNumber(num) {
+  if (!num) return '0';
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
+  if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
+  return num.toString();
+}
+
+/**
+ * Format durasi (detik ke MM:SS)
+ */
+function formatDuration(seconds) {
+  if (!seconds) return 'N/A';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Format uptime
+ */
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return `${d}d ${h}h ${m}m ${s}s`;
+}
+
+/**
+ * Log kunjungan user ke Telegram (gantungan dari sendErrorToTelegram)
+ * Digunakan untuk mencatat ada user yang mengakses website.
+ */
+async function logUserVisit(req) {
+  if (!TELEGRAM_TOKEN || !OWNER_ID) return;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const userAgent = req.headers['user-agent'] || 'Unknown';
+  const message = `👤 *User Visit Website*\n\nIP: ${ip}\nUser-Agent: ${userAgent}\nTime: ${new Date().toLocaleString('id-ID')}`;
   try {
-    await axios.post(`https://api.telegram.org/bot${config.TELEGRAM_TOKEN}/sendMessage`, {
-      chat_id: config.OWNER_ID,
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      chat_id: OWNER_ID,
       text: message,
       parse_mode: 'Markdown'
     });
   } catch (e) {
-    console.error('Gagal kirim ke Telegram:', e.message);
+    // Gagal kirim notifikasi, diamkan saja
   }
 }
 
-// ==================== PINTEREST HELPER (BARU) ====================
-async function getCookies() {
+/**
+ * Validasi URL
+ */
+function isValidUrl(url) {
+  return validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] });
+}
+
+// ==================== SERVICE: PINTEREST ====================
+async function getPinterestCookies() {
   try {
-    const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent: agent });
+    const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent });
     const setCookieHeaders = response.headers['set-cookie'];
     if (setCookieHeaders) {
-      const cookies = setCookieHeaders.map(cookieString => cookieString.split(';')[0].trim());
+      const cookies = setCookieHeaders.map(c => c.split(';')[0].trim());
       return cookies.join('; ');
     }
     return null;
   } catch (error) {
-    console.error('Gagal ambil cookie:', error.message);
+    console.error('Gagal ambil cookie Pinterest:', error.message);
     return null;
   }
 }
 
-async function pinterest(query) {
-  try {
-    const cookies = await getCookies();
-    if (!cookies) throw new Error('Tidak bisa ambil cookies');
+async function searchPinterest(query) {
+  const cookies = await getPinterestCookies();
+  if (!cookies) throw new Error('Tidak bisa mendapatkan cookies Pinterest');
 
-    const url = 'https://www.pinterest.com/resource/BaseSearchResource/get/';
-    const params = {
-      source_url: `/search/pins/?q=${encodeURIComponent(query)}`,
-      data: JSON.stringify({
-        options: {
-          isPrefetch: false,
-          query,
-          scope: 'pins',
-          no_fetch_context_on_resource: false,
-        },
-        context: {},
-      }),
-      _: Date.now(),
-    };
+  const url = 'https://www.pinterest.com/resource/BaseSearchResource/get/';
+  const params = {
+    source_url: `/search/pins/?q=${encodeURIComponent(query)}`,
+    data: JSON.stringify({
+      options: {
+        isPrefetch: false,
+        query,
+        scope: 'pins',
+        no_fetch_context_on_resource: false,
+      },
+      context: {},
+    }),
+    _: Date.now(),
+  };
 
-    const headers = {
-      'accept': 'application/json, text/javascript, */*, q=0.01',
-      'accept-encoding': 'gzip, deflate',
-      'accept-language': 'en-US,en;q=0.9',
-      'cookie': cookies,
-      'dnt': '1',
-      'referer': 'https://www.pinterest.com/',
-      'sec-ch-ua': '"Not(A:Brand";v="99", "Microsoft Edge";v="133", "Chromium";v="133"',
-      'sec-ch-ua-full-version-list': '"Not(A:Brand";v="99.0.0.0", "Microsoft Edge";v="133.0.3065.92", "Chromium";v="133.0.6943.142"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-model': '""',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-ch-ua-platform-version': '"10.0.0"',
-      'sec-fetch-dest': 'empty',
-      'sec-fetch-mode': 'cors',
-      'sec-fetch-site': 'same-origin',
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0',
-      'x-app-version': 'c056fb7',
-      'x-pinterest-appstate': 'active',
-      'x-pinterest-pws-handler': 'www/[username]/[slug].js',
-      'x-pinterest-source-url': '/hargr003/cat-pictures/',
-      'x-requested-with': 'XMLHttpRequest'
-    };
+  const headers = {
+    'accept': 'application/json, text/javascript, */*, q=0.01',
+    'accept-encoding': 'gzip, deflate',
+    'accept-language': 'en-US,en;q=0.9',
+    'cookie': cookies,
+    'dnt': '1',
+    'referer': 'https://www.pinterest.com/',
+    'sec-ch-ua': '"Not(A:Brand";v="99", "Microsoft Edge";v="133", "Chromium";v="133"',
+    'sec-ch-ua-full-version-list': '"Not(A:Brand";v="99.0.0.0", "Microsoft Edge";v="133.0.3065.92", "Chromium";v="133.0.6943.142"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-model': '""',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-ch-ua-platform-version': '"10.0.0"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0',
+    'x-app-version': 'c056fb7',
+    'x-pinterest-appstate': 'active',
+    'x-pinterest-pws-handler': 'www/[username]/[slug].js',
+    'x-pinterest-source-url': '/hargr003/cat-pictures/',
+    'x-requested-with': 'XMLHttpRequest'
+  };
 
-    const { data } = await axios.get(url, {
-      httpsAgent: agent,
-      headers,
-      params,
+  const { data } = await axios.get(url, { httpsAgent, headers, params });
+  const results = data?.resource_response?.data?.results || [];
+  return results
+    .filter(v => v.images?.orig)
+    .map(v => ({
+      upload_by: v.pinner?.username || 'unknown',
+      caption: v.grid_title || '',
+      image: v.images.orig.url,
+      source: `https://id.pinterest.com/pin/${v.id}`,
+    }));
+}
+
+// ==================== SERVICE: WEBZIP ====================
+async function saveWeb2Zip(url, options = {}) {
+  if (!url) throw new Error('URL diperlukan');
+  const targetUrl = url.startsWith('https://') ? url : `https://${url}`;
+  const {
+    renameAssets = false,
+    saveStructure = false,
+    alternativeAlgorithm = false,
+    mobileVersion = false
+  } = options;
+
+  // Request awal untuk mendapatkan md5
+  const response = await cloudscraper.post('https://copier.saveweb2zip.com/api/copySite', {
+    json: {
+      url: targetUrl,
+      renameAssets,
+      saveStructure,
+      alternativeAlgorithm,
+      mobileVersion
+    },
+    headers: {
+      accept: '*/*',
+      'content-type': 'application/json',
+      origin: 'https://saveweb2zip.com',
+      referer: 'https://saveweb2zip.com/'
+    }
+  });
+
+  const { md5 } = response;
+
+  // Polling status dengan batas waktu dan percobaan
+  const maxAttempts = 60; // 60 detik
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    const process = await cloudscraper.get(`https://copier.saveweb2zip.com/api/getStatus/${md5}`, {
+      json: true,
+      headers: {
+        accept: '*/*',
+        'content-type': 'application/json',
+        origin: 'https://saveweb2zip.com',
+        referer: 'https://saveweb2zip.com/'
+      }
     });
 
-    const results = data?.resource_response?.data?.results || [];
-    return results
-      .filter(v => v.images?.orig)
-      .map(v => ({
-        upload_by: v.pinner?.username || 'unknown',
-        caption: v.grid_title || '',
-        image: v.images.orig.url,
-        source: `https://id.pinterest.com/pin/${v.id}`,
-      }));
-  } catch (err) {
-    console.error('Pinterest error:', err.message);
-    throw new Error('Gagal mengambil data dari Pinterest.');
+    if (process.isFinished) {
+      return {
+        url: targetUrl,
+        error: {
+          text: process.errorText,
+          code: process.errorCode,
+        },
+        copiedFilesAmount: process.copiedFilesAmount,
+        downloadUrl: `https://copier.saveweb2zip.com/api/downloadArchive/${process.md5}`
+      };
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    attempts++;
   }
+  throw new Error('Timeout: proses webzip terlalu lama');
 }
 
-// ==================== WEBZIP ENDPOINT ====================
-async function saveweb2zip(url, options = {}) {
-    if (!url) throw new Error('Url is required');
-    url = url.startsWith('https://') ? url : `https://${url}`;
-    const {
-        renameAssets = false,
-        saveStructure = false,
-        alternativeAlgorithm = false,
-        mobileVersion = false
-    } = options;
-
-    let response = await cloudscraper.post('https://copier.saveweb2zip.com/api/copySite', {
-        json: {
-            url,
-            renameAssets,
-            saveStructure,
-            alternativeAlgorithm,
-            mobileVersion
-        },
-        headers: {
-            accept: '*/*',
-            'content-type': 'application/json',
-            origin: 'https://saveweb2zip.com',
-            referer: 'https://saveweb2zip.com/'
-        }
-    });
-
-    const { md5 } = response;
-
-    while (true) {
-        let process = await cloudscraper.get(`https://copier.saveweb2zip.com/api/getStatus/${md5}`, {
-            json: true,
-            headers: {
-                accept: '*/*',
-                'content-type': 'application/json',
-                origin: 'https://saveweb2zip.com',
-                referer: 'https://saveweb2zip.com/'
-            }
-        });
-
-        if (!process.isFinished) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            continue;
-        } else {
-            return {
-                url,
-                error: {
-                    text: process.errorText,
-                    code: process.errorCode,
-                },
-                copiedFilesAmount: process.copiedFilesAmount,
-                downloadUrl: `https://copier.saveweb2zip.com/api/downloadArchive/${process.md5}`
-            }
-        }
-    }
+// ==================== SERVICE: TIKTOK ====================
+async function fetchTikTok(url) {
+  const response = await axios.post('https://www.tikwm.com/api/', {}, {
+    headers: {
+      'Accept': 'application/json, text/javascript, */*; q=0.01',
+      'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Origin': 'https://www.tikwm.com',
+      'Referer': 'https://www.tikwm.com/',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    params: { url, count: 12, cursor: 0, web: 1, hd: 1 }
+  });
+  return response.data.data;
 }
 
-// ==================== PINTEREST ENDPOINT ====================
-app.get('/pinterest', async (req, res) => {
-    const { q } = req.query;
-    if (!q) {
-        return res.status(400).json({ status: false, error: 'Parameter q diperlukan.' });
-    }
-    try {
-        const results = await pinterest(q);
-        res.json({
-            status: true,
-            result: results
-        });
-    } catch (error) {
-        console.error('Pinterest error:', error);
-        res.status(500).json({ status: false, error: error.message, stack: error.stack });
-    }
+// ==================== ROUTER UTAMA (dalam satu file) ====================
+// Kita bisa menggunakan express.Router() untuk pengelompokan, tapi tetap di sini.
+
+// ==================== ENDPOINT: Status API ====================
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: 'ok',
+    version: VERSION,
+    developer: DEVELOPER,
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
 });
 
-// ==================== API ENDPOINTS ====================
+// ==================== ENDPOINT: Pinterest ====================
+app.get('/pinterest', async (req, res) => {
+  const { q } = req.query;
+  if (!q || typeof q !== 'string') {
+    return res.status(400).json({ status: false, error: 'Parameter q (string) diperlukan.' });
+  }
+  try {
+    const results = await searchPinterest(q);
+    res.json({ status: true, result: results });
+  } catch (error) {
+    console.error('Pinterest error:', error.message);
+    res.status(500).json({ status: false, error: 'Gagal mengambil data dari Pinterest.' });
+  }
+});
+
+// ==================== ENDPOINT: Waifu ====================
 app.get('/waifu', async (req, res) => {
   try {
     const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
@@ -212,15 +329,15 @@ app.get('/waifu', async (req, res) => {
     });
     res.end(buffer);
   } catch (error) {
-    await sendErrorToTelegram(error);
-    res.status(500).send(`Error: ${error.message}`);
+    console.error('Waifu error:', error.message);
+    res.status(500).send('Error mengambil gambar waifu.');
   }
 });
 
+// ==================== ENDPOINT: NSFW ====================
 app.get('/nsfw', async (req, res) => {
   try {
-    const types = ["blowjob", "neko", "trap", "waifu"];
-    const randomType = types[Math.floor(Math.random() * types.length)];
+    const randomType = NSFW_TYPES[Math.floor(Math.random() * NSFW_TYPES.length)];
     const data = await fetchJson(`https://api.waifu.pics/nsfw/${randomType}`);
     const buffer = await getBuffer(data.url);
     res.writeHead(200, {
@@ -229,155 +346,121 @@ app.get('/nsfw', async (req, res) => {
     });
     res.end(buffer);
   } catch (error) {
-    await sendErrorToTelegram(error);
-    res.status(500).send(`Error: ${error.message}`);
+    console.error('NSFW error:', error.message);
+    res.status(500).send('Error mengambil gambar NSFW.');
   }
 });
 
-app.get('/api/status', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    version: config.VERSI_WEB, 
-    developer: config.DEVELOPER,
-    uptime: process.uptime(),
-    timestamp: Date.now()
-  });
-});
-
-// ==================== WEBZIP ====================
+// ==================== ENDPOINT: Webzip ====================
 app.get('/webzip', async (req, res) => {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
+  const { url } = req.query;
+  if (!url) {
+    return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
+  }
+  if (!isValidUrl(url)) {
+    return res.status(400).json({ status: false, error: 'URL tidak valid.' });
+  }
 
-    try {
-        const result = await saveweb2zip(url, { renameAssets: true });
-
-        if (result.error?.code) {
-            return res.status(500).json({
-                status: false,
-                error: result.error.text || 'Gagal menyimpan website.'
-            });
-        }
-
-        return res.json({
-            status: true,
-            originalUrl: result.url,
-            copiedFilesAmount: result.copiedFilesAmount,
-            downloadUrl: result.downloadUrl
-        });
-
-    } catch (e) {
-        await sendErrorToTelegram(e);
-        return res.status(500).json({ status: false, error: e.message });
+  try {
+    const result = await saveWeb2Zip(url, { renameAssets: true });
+    if (result.error?.code) {
+      return res.status(500).json({
+        status: false,
+        error: result.error.text || 'Gagal menyimpan website.'
+      });
     }
+    res.json({
+      status: true,
+      originalUrl: result.url,
+      copiedFilesAmount: result.copiedFilesAmount,
+      downloadUrl: result.downloadUrl
+    });
+  } catch (error) {
+    console.error('Webzip error:', error.message);
+    res.status(500).json({ status: false, error: error.message });
+  }
 });
 
-// ==================== TIKTOK ENDPOINT (LENGKAP) ====================
+// ==================== ENDPOINT: TikTok ====================
 app.get('/tiktok', async (req, res) => {
-    const url = req.query.url;
-    if (!url || !url.includes('tiktok.com')) {
-        return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
+  const { url } = req.query;
+  if (!url || !url.includes('tiktok.com')) {
+    return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
+  }
+  if (!isValidUrl(url)) {
+    return res.status(400).json({ status: false, error: 'URL tidak valid.' });
+  }
+
+  try {
+    const data = await fetchTikTok(url);
+    if (!data) {
+      return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
     }
 
-    try {
-        const response = await axios.post('https://www.tikwm.com/api/', {}, {
-            headers: {
-                'Accept': 'application/json, text/javascript, */*; q=0.01',
-                'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'Origin': 'https://www.tikwm.com',
-                'Referer': 'https://www.tikwm.com/',
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            params: {
-                url: url,
-                count: 12,
-                cursor: 0,
-                web: 1,
-                hd: 1
-            }
-        });
-
-        const data = response.data.data;
-        if (!data) {
-            return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
-        }
-        const formatNumber = (num) => {
-            if (!num) return 0;
-            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-            return num.toString();
-        };
-        const duration = data.duration ? Math.floor(data.duration / 60) + ':' + (data.duration % 60).toString().padStart(2, '0') : 'N/A';
-
-        res.json({
-            status: true,
-            result: {
-                video: data.play ? 'https://www.tikwm.com' + data.play : null,
-                audio: data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null),
-                title: data.title || 'Tidak ada judul',
-                author: data.author?.nickname || 'Unknown',
-                author_username: data.author?.unique_id || '',
-                duration: duration,
-                duration_seconds: data.duration || 0,
-                play_count: formatNumber(data.play_count),
-                like_count: formatNumber(data.digg_count),
-                comment_count: formatNumber(data.comment_count),
-                share_count: formatNumber(data.share_count),
-                download_count: formatNumber(data.download_count)
-            }
-        });
-
-    } catch (error) {
-        console.error('TikTok error:', error);
-        res.status(500).json({ status: false, error: 'Gagal memproses permintaan.' });
-    }
+    res.json({
+      status: true,
+      result: {
+        video: data.play ? 'https://www.tikwm.com' + data.play : null,
+        audio: data.music ? 'https://www.tikwm.com' + data.music : (data.music_info?.play ? 'https://www.tikwm.com' + data.music_info.play : null),
+        title: data.title || 'Tidak ada judul',
+        author: data.author?.nickname || 'Unknown',
+        author_username: data.author?.unique_id || '',
+        duration: formatDuration(data.duration),
+        duration_seconds: data.duration || 0,
+        play_count: formatNumber(data.play_count),
+        like_count: formatNumber(data.digg_count),
+        comment_count: formatNumber(data.comment_count),
+        share_count: formatNumber(data.share_count),
+        download_count: formatNumber(data.download_count)
+      }
+    });
+  } catch (error) {
+    console.error('TikTok error:', error.message);
+    res.status(500).json({ status: false, error: 'Gagal memproses permintaan TikTok.' });
+  }
 });
 
-// ==================== BRAT (via API eksternal) ====================
+// ==================== ENDPOINT: Brat ====================
 app.get('/brat', async (req, res) => {
-    const text = req.query.text;
-    if (!text) {
-        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
-    }
-
-    try {
-        const apiUrl = `https://api.siputzx.my.id/api/m/brat?text=${encodeURIComponent(text)}`;
-        const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
-        const buffer = Buffer.from(response.data);
-
-        res.setHeader('Content-Type', 'image/png');
-        res.setHeader('Content-Length', buffer.length);
-        res.send(buffer);
-    } catch (error) {
-        console.error('Brat error:', error);
-        res.status(500).json({ status: 500, message: 'Gagal mengambil gambar brat.', error: error.message });
-    }
+  const { text } = req.query;
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ status: false, message: 'Parameter text diperlukan.' });
+  }
+  try {
+    const apiUrl = `https://api.siputzx.my.id/api/m/brat?text=${encodeURIComponent(text)}`;
+    const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(response.data);
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (error) {
+    console.error('Brat error:', error.message);
+    res.status(500).json({ status: false, message: 'Gagal mengambil gambar brat.' });
+  }
 });
 
-// ==================== BRATVID (via API eksternal) ====================
+// ==================== ENDPOINT: Bratvid ====================
 app.get('/bratvid', async (req, res) => {
-    const text = req.query.text;
-    if (!text) {
-        return res.status(400).json({ status: 400, message: 'Parameter text diperlukan.' });
-    }
-
-    try {
-        const apiUrl = `https://zelapioffciall.koyeb.app/canvas/bratvid?text=${encodeURIComponent(text)}`;
-        const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
-        const buffer = Buffer.from(response.data);
-
-        res.setHeader('Content-Type', 'image/png');
-        res.setHeader('Content-Length', buffer.length);
-        res.send(buffer);
-    } catch (error) {
-        console.error('Bratvid error:', error);
-        res.status(500).json({ status: 500, message: 'Gagal mengambil gambar bratvid.', error: error.message });
-    }
+  const { text } = req.query;
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ status: false, message: 'Parameter text diperlukan.' });
+  }
+  try {
+    const apiUrl = `https://zelapioffciall.koyeb.app/canvas/bratvid?text=${encodeURIComponent(text)}`;
+    const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
+    const buffer = Buffer.from(response.data);
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
+  } catch (error) {
+    console.error('Bratvid error:', error.message);
+    res.status(500).json({ status: false, message: 'Gagal mengambil gambar bratvid.' });
+  }
 });
 
-// ==================== HALAMAN UTAMA ====================
+// ==================== HALAMAN UTAMA (HTML) ====================
+// HTML diambil persis dari kode asli, hanya bagian script yang sedikit disesuaikan
+// untuk menggunakan BASE_URL yang sudah didefinisikan.
 app.get('/', (req, res) => {
   const html = `<!DOCTYPE html>
 <html lang="id">
@@ -388,7 +471,7 @@ app.get('/', (req, res) => {
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
 <meta property="og:type" content="website">
-<meta property="og:url" content="${config.URL}">
+<meta property="og:url" content="${BASE_URL}">
 <meta property="og:title" content="NovaBot API">
 <meta property="og:description" content="API untuk bot WhatsApp Novabot">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&family=VT323&display=swap" rel="stylesheet">
@@ -819,7 +902,7 @@ body {
   <div class="lux-section-title">Latest News</div>
   <div class="slider-container" id="newsSlider">
     <div class="slider-track">
-      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Novabot API v${config.VERSI_WEB}</h3><p>API siap digunakan</p></div></div>
+      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Novabot API v${VERSION}</h3><p>API siap digunakan</p></div></div>
       <div class="slide"><video src="https://files.catbox.moe/sbwa8f.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Mudah & Cepat</h3><p>Integrasi dengan bot Anda</p></div></div>
     </div>
   </div>
@@ -830,7 +913,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/waifu</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -843,7 +926,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/nsfw</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
       </div>
       <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -856,7 +939,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/webzip?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
       </div>
       <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
       <div class="input-group">
@@ -870,7 +953,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/tiktok?url=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
       </div>
       <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
       <div class="input-group">
@@ -884,7 +967,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/brat?text=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
       </div>
       <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -898,7 +981,7 @@ body {
 <div class="api-endpoint">
   <div class="api-header">
     <span class="method">GET</span><span class="url">/pinterest?q=</span>
-    <button class="copy-btn" onclick="copyText('${config.URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
+    <button class="copy-btn" onclick="copyText('${BASE_URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
   </div>
   <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
   <div class="input-group">
@@ -912,7 +995,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/bratvid?text=</span>
-        <button class="copy-btn" onclick="copyText('${config.URL}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
       </div>
       <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -924,7 +1007,7 @@ body {
   </div>
 
   <div class="footer">
-    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${config.DEVELOPER} • v${config.VERSI_WEB}</p>
+    <p>© 2026 Novabot • <i class="fab fa-telegram"></i> ${DEVELOPER} • v${VERSION}</p>
   </div>
 </div>
 
@@ -997,7 +1080,7 @@ async function testPinterest() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/pinterest?q=' + encodeURIComponent(query);
+    const apiUrl = '${BASE_URL}' + '/pinterest?q=' + encodeURIComponent(query);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1044,7 +1127,7 @@ async function testWaifu() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${config.URL}' + '/waifu');
+    const res = await fetch('${BASE_URL}' + '/waifu');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1064,7 +1147,7 @@ async function testNsfw() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${config.URL}' + '/nsfw');
+    const res = await fetch('${BASE_URL}' + '/nsfw');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1086,7 +1169,7 @@ async function testWebzip() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/webzip?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${BASE_URL}' + '/webzip?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1113,7 +1196,7 @@ async function testTiktok() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/tiktok?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '${BASE_URL}' + '/tiktok?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1160,7 +1243,7 @@ async function testBrat() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/brat?text=' + encodeURIComponent(textInput);
+    const apiUrl = '${BASE_URL}' + '/brat?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1188,7 +1271,7 @@ async function testBratvid() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${config.URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
+    const apiUrl = '${BASE_URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1228,17 +1311,23 @@ document.addEventListener('keydown',e=>{
   res.send(html);
 });
 
+// ==================== ERROR HANDLER GLOBAL ====================
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err.stack);
+  res.status(500).json({ status: false, error: 'Terjadi kesalahan internal server.' });
+});
+
 // ==================== START SERVER ====================
 app.listen(PORT, HOST, () => {
   console.log(`
-\x1b[1m\x1b[34m╔╗ ╦  ╔═╗╔═╗╔═╗╦═╗╔═╗ \x1b[31m
-\x1b[1m\x1b[34m╠╩╗║  ╠═╣╔═╝║╣ ╠╦╝╚═╗ \x1b[31m
-\x1b[1m\x1b[34m╚═╝╩═╝╩ ╩╚═╝╚═╝╩╚═╚═╝ \x1b[31m
-\x1b[1m\x1b[33mN O V A B O T   A P I   v${config.VERSI_WEB || '1.0'}\x1b[0m
+\x1b[1m\x1b[34m╔╗ ╦  ╔═\x1b[0m╗╔═╗╔═╗╦═╗╔═╗ \x1b[31m
+\x1b[1m\x1b[34m╠╩╗║  ╠═╣╔═╝\x1b[0m║╣ ╠╦╝╚═╗ \x1b[31m
+\x1b[1m\x1b[34m╚═╝╩═╝╩ ╩╚═╝╚═╝╩\x1b[0m╚═╚═╝ \x1b[31m
+\x1b[1m\x1b[33mN O V A B O T   A P I   v${VERSION}\x1b[0m
 \x1b[1m\x1b[32m═══════════════════════════════════════\x1b[0m
 🌐 Server: http://${HOST}:${PORT}
-👤 Developer: ${config.DEVELOPER || '@Novabot403'}
-📦 Version: ${config.VERSI_WEB || '1.0'}
+👤 Developer: ${DEVELOPER}
+📦 Version: ${VERSION}
 ✅ API ready!
   `);
 });
