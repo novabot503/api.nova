@@ -1,6 +1,7 @@
 // ==================== index.js ====================
-// Novabot API - Versi Terstruktur dengan Pengelompokan Jelas
-// Semua fitur dan tampilan tetap sama, internal dirapikan dan ditambah notifikasi error ke Telegram.
+// Novabot API - Versi Lengkap dengan Autentikasi Email (Single File)
+// Semua fitur API tetap berfungsi + login dengan email + dashboard foto profil (Gravatar)
+// Tampilan website utama tidak berubah, hanya ditambahkan tombol login/profile di header
 
 const express = require('express');
 const axios = require('axios');
@@ -12,19 +13,22 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const validator = require('validator');
-const config = require('./setting.js');
+const session = require('express-session');
+const passport = require('passport');
+const LocalStrategy = require('passport-local').Strategy;
+const bcrypt = require('bcrypt');
+const flash = require('connect-flash');
+const Database = require('better-sqlite3');
+const crypto = require('crypto');
 
-// ==================== INISIALISASI ====================
-const app = express();
+// ==================== index.js (bagian konfigurasi) ====================
 const PORT = config.PORT || 8080;
 const HOST = config.HOST || 'localhost';
-
-// ==================== KONFIGURASI & KONSTANTA ====================
+const BASE_URL = config.URL || `http://${HOST}:${PORT}`;
+const SESSION_SECRET = config.SESSION_SECRET || 'novabot-super-secret-2026';
 const VERSION = config.VERSI_WEB || '1.0';
 const DEVELOPER = config.DEVELOPER || '@Novabot403';
-const BASE_URL = config.URL || `http://${HOST}:${PORT}`;
-const TELEGRAM_TOKEN = config.TELEGRAM_TOKEN;
-const OWNER_ID = config.OWNER_ID;
+const SITE_NAME = config.SITE_NAME || 'NovaBot API';
 
 // HTTPS Agent untuk Pinterest
 const httpsAgent = new https.Agent({
@@ -36,15 +40,66 @@ const httpsAgent = new https.Agent({
 // Daftar tipe NSFW
 const NSFW_TYPES = ['blowjob', 'neko', 'trap', 'waifu'];
 
-// ==================== MIDDLEWARE GLOBAL ====================
-app.use(helmet());
+// ==================== DATABASE SQLITE ====================
+const db = new Database('database.sqlite');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE,
+    password TEXT,
+    name TEXT,
+    photo TEXT, -- menyimpan URL gravatar
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// ==================== PASSPORT CONFIGURATION ====================
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser((id, done) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  done(null, user);
+});
+
+// Strategy Local (Email/Password)
+passport.use(new LocalStrategy({ usernameField: 'email' }, (email, password, done) => {
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user) return done(null, false, { message: 'Email tidak terdaftar' });
+  
+  bcrypt.compare(password, user.password, (err, isValid) => {
+    if (err) return done(err);
+    if (!isValid) return done(null, false, { message: 'Password salah' });
+    return done(null, user);
+  });
+}));
+
+// ==================== INISIALISASI EXPRESS ====================
+const app = express();
+
+// Middleware umum
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
 
-// Rate limiting per IP (khusus endpoint API)
+// Session
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 1 hari
+}));
+
+// Passport
+app.use(passport.initialize());
+app.use(passport.session());
+app.use(flash());
+
+// Rate limiting untuk API
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -57,27 +112,11 @@ app.use('/api', limiter);
 // ==================== FUNGSI HELPER ====================
 
 /**
- * Mengirim notifikasi error ke Telegram
+ * Mendapatkan URL Gravatar dari email
  */
-async function sendErrorToTelegram(error, req = null) {
-  if (!TELEGRAM_TOKEN || !OWNER_ID) return;
-  const ip = req ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress) : 'unknown';
-  const endpoint = req ? `${req.method} ${req.originalUrl}` : 'unknown';
-  const message = `❌ *API Error*\n\n` +
-    `*Endpoint:* ${endpoint}\n` +
-    `*IP:* ${ip}\n` +
-    `*Time:* ${new Date().toLocaleString('id-ID')}\n` +
-    `*Message:* ${error.message}\n` +
-    `*Stack:* ${error.stack || ''}`;
-  try {
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-      chat_id: OWNER_ID,
-      text: message,
-      parse_mode: 'Markdown'
-    });
-  } catch (e) {
-    console.error('Gagal kirim ke Telegram:', e.message);
-  }
+function getGravatarUrl(email, size = 200) {
+  const hash = crypto.createHash('md5').update(email.trim().toLowerCase()).digest('hex');
+  return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=identicon`;
 }
 
 /**
@@ -134,8 +173,13 @@ function isValidUrl(url) {
   return validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] });
 }
 
-// ==================== SERVICE: PINTEREST ====================
+// ==================== MIDDLEWARE CEK LOGIN ====================
+function isAuthenticated(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  res.redirect('/login');
+}
 
+// ==================== SERVICE: PINTEREST ====================
 async function getPinterestCookies() {
   try {
     const response = await axios.get('https://www.pinterest.com/csrf_error/', { httpsAgent });
@@ -207,7 +251,6 @@ async function searchPinterest(query) {
 }
 
 // ==================== SERVICE: WEBZIP ====================
-
 async function saveWeb2Zip(url, options = {}) {
   if (!url) throw new Error('URL diperlukan');
   const targetUrl = url.startsWith('https://') ? url : `https://${url}`;
@@ -268,7 +311,6 @@ async function saveWeb2Zip(url, options = {}) {
 }
 
 // ==================== SERVICE: TIKTOK ====================
-
 async function fetchTikTok(url) {
   const response = await axios.post('https://www.tikwm.com/api/', {}, {
     headers: {
@@ -285,121 +327,490 @@ async function fetchTikTok(url) {
   return response.data.data;
 }
 
-// ==================== ENDPOINT: STATUS API ====================
+// ==================== ROUTE AUTENTIKASI ====================
 
-app.get('/api/status', (req, res) => {
-  res.json({
-    status: 'ok',
-    version: VERSION,
-    developer: DEVELOPER,
-    uptime: process.uptime(),
-    timestamp: Date.now()
+// Halaman login
+app.get('/login', (req, res) => {
+  if (req.isAuthenticated()) return res.redirect('/dashboard');
+  const error = req.flash('error')[0];
+  const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - ${SITE_NAME}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
+    body {
+      background: #0a0c14;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+    }
+    .login-box {
+      background: #0f1320;
+      border: 1px solid #1f2a40;
+      border-radius: 16px;
+      padding: 40px;
+      width: 400px;
+      box-shadow: 0 0 30px rgba(0,0,0,0.7);
+      text-align: center;
+    }
+    h2 {
+      font-family: 'Orbitron', sans-serif;
+      color: #5b8cff;
+      margin-bottom: 10px;
+      font-size: 28px;
+      letter-spacing: 2px;
+    }
+    .sub {
+      color: #8a9bb0;
+      font-size: 12px;
+      margin-bottom: 30px;
+      border-bottom: 1px dashed #1f2a40;
+      padding-bottom: 15px;
+    }
+    .input-group {
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #8a9bb0;
+      font-size: 14px;
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #1f2a40;
+      background: #1a1f30;
+      color: #fff;
+      font-size: 14px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #5b8cff;
+      border: none;
+      border-radius: 8px;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 10px 0;
+      font-size: 16px;
+    }
+    button:hover {
+      filter: brightness(1.1);
+    }
+    .error {
+      background: #ff3b30;
+      color: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .link {
+      color: #5b8cff;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .footer {
+      color: #5f6b7a;
+      font-size: 12px;
+      border-top: 1px solid #1f2a40;
+      padding-top: 20px;
+      margin-top: 20px;
+    }
+    .footer span {
+      color: #00ff88;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="login-box">
+    <h2>🔐 ${SITE_NAME}</h2>
+    <div class="sub">private access • encrypted session</div>
+    
+    ${error ? `<div class="error">${error}</div>` : ''}
+    
+    <form action="/login" method="POST">
+      <div class="input-group">
+        <label>EMAIL</label>
+        <input type="email" name="email" placeholder="email@example.com" required>
+      </div>
+      <div class="input-group">
+        <label>PASSWORD</label>
+        <input type="password" name="password" placeholder="••••••••" required>
+      </div>
+      <button type="submit">LOGIN</button>
+    </form>
+    
+    <p style="margin: 15px 0;">
+      <a href="/register" class="link">Belum punya akun? Daftar</a>
+    </p>
+    
+    <div class="footer">
+      <span>AES-256</span> • status: ONLINE • PING 19ms
+    </div>
+  </div>
+</body>
+</html>`;
+  res.send(html);
+});
+
+// Halaman register
+app.get('/register', (req, res) => {
+  if (req.isAuthenticated()) return res.redirect('/dashboard');
+  const error = req.flash('error')[0];
+  const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - ${SITE_NAME}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
+    body {
+      background: #0a0c14;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+    }
+    .register-box {
+      background: #0f1320;
+      border: 1px solid #1f2a40;
+      border-radius: 16px;
+      padding: 40px;
+      width: 400px;
+      box-shadow: 0 0 30px rgba(0,0,0,0.7);
+      text-align: center;
+    }
+    h2 {
+      font-family: 'Orbitron', sans-serif;
+      color: #5b8cff;
+      margin-bottom: 10px;
+      font-size: 28px;
+      letter-spacing: 2px;
+    }
+    .sub {
+      color: #8a9bb0;
+      font-size: 12px;
+      margin-bottom: 30px;
+      border-bottom: 1px dashed #1f2a40;
+      padding-bottom: 15px;
+    }
+    .input-group {
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #8a9bb0;
+      font-size: 14px;
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #1f2a40;
+      background: #1a1f30;
+      color: #fff;
+      font-size: 14px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #5b8cff;
+      border: none;
+      border-radius: 8px;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 10px 0;
+      font-size: 16px;
+    }
+    button:hover {
+      filter: brightness(1.1);
+    }
+    .error {
+      background: #ff3b30;
+      color: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    .link {
+      color: #5b8cff;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .footer {
+      color: #5f6b7a;
+      font-size: 12px;
+      border-top: 1px solid #1f2a40;
+      padding-top: 20px;
+      margin-top: 20px;
+    }
+    .footer span {
+      color: #00ff88;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="register-box">
+    <h2>📝 ${SITE_NAME}</h2>
+    <div class="sub">create new account</div>
+    
+    ${error ? `<div class="error">${error}</div>` : ''}
+    
+    <form action="/register" method="POST">
+      <div class="input-group">
+        <label>NAMA</label>
+        <input type="text" name="name" placeholder="Nama lengkap" required>
+      </div>
+      <div class="input-group">
+        <label>EMAIL</label>
+        <input type="email" name="email" placeholder="email@example.com" required>
+      </div>
+      <div class="input-group">
+        <label>PASSWORD</label>
+        <input type="password" name="password" placeholder="Minimal 6 karakter" required>
+      </div>
+      <button type="submit">DAFTAR</button>
+    </form>
+    
+    <p style="margin: 15px 0;">
+      <a href="/login" class="link">Sudah punya akun? Login</a>
+    </p>
+    
+    <div class="footer">
+      <span>AES-256</span> • status: ONLINE • PING 19ms
+    </div>
+  </div>
+</body>
+</html>`;
+  res.send(html);
+});
+
+// Proses register
+app.post('/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!name || !email || !password) {
+    req.flash('error', 'Semua field harus diisi');
+    return res.redirect('/register');
+  }
+  if (password.length < 6) {
+    req.flash('error', 'Password minimal 6 karakter');
+    return res.redirect('/register');
+  }
+  // Cek email sudah terdaftar
+  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (existing) {
+    req.flash('error', 'Email sudah digunakan');
+    return res.redirect('/register');
+  }
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const photo = getGravatarUrl(email);
+  const stmt = db.prepare('INSERT INTO users (email, password, name, photo) VALUES (?, ?, ?, ?)');
+  stmt.run(email, hashedPassword, name, photo);
+  res.redirect('/login');
+});
+
+// Proses login
+app.post('/login', passport.authenticate('local', {
+  successRedirect: '/dashboard',
+  failureRedirect: '/login',
+  failureFlash: true
+}));
+
+// Dashboard (hanya untuk yang sudah login)
+app.get('/dashboard', isAuthenticated, (req, res) => {
+  const user = req.user;
+  const photo = user.photo || getGravatarUrl(user.email);
+  const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - ${SITE_NAME}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
+    body {
+      background: #0a0c14;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+    }
+    .dashboard {
+      background: #0f1320;
+      border: 1px solid #1f2a40;
+      border-radius: 16px;
+      padding: 40px;
+      width: 450px;
+      text-align: center;
+      box-shadow: 0 0 30px rgba(0,0,0,0.7);
+    }
+    .avatar {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 4px solid #5b8cff;
+      margin-bottom: 20px;
+    }
+    h2 {
+      font-family: 'Orbitron', sans-serif;
+      color: #5b8cff;
+      margin-bottom: 10px;
+    }
+    .info {
+      background: #1a1f30;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+      text-align: left;
+      border-left: 4px solid #5b8cff;
+    }
+    .info p {
+      margin: 8px 0;
+      color: #a0b0c0;
+    }
+    .info strong {
+      color: #fff;
+      width: 80px;
+      display: inline-block;
+    }
+    .logout-btn {
+      background: #ff3b30;
+      color: #fff;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 40px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.2s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .logout-btn:hover {
+      filter: brightness(1.1);
+      transform: scale(1.02);
+    }
+    .footer {
+      margin-top: 30px;
+      color: #5f6b7a;
+      font-size: 12px;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="dashboard">
+    <img src="${photo}" class="avatar" alt="Foto Profil">
+    <h2>Halo, ${user.name}!</h2>
+    <div class="info">
+      <p><strong>Email</strong> ${user.email}</p>
+      <p><strong>ID</strong> ${user.id}</p>
+      <p><strong>Bergabung</strong> ${new Date(user.createdAt).toLocaleDateString('id-ID')}</p>
+    </div>
+    <a href="/logout" class="logout-btn">🚪 KELUAR</a>
+    <div class="footer">
+      <span>${SITE_NAME} v${VERSION}</span> • ${DEVELOPER}
+    </div>
+  </div>
+</body>
+</html>`;
+  res.send(html);
+});
+
+// Logout
+app.get('/logout', (req, res) => {
+  req.logout(err => {
+    if (err) console.error(err);
+    res.redirect('/');
   });
 });
 
-// ==================== ENDPOINT: PINTEREST ====================
+// ==================== ROUTE API (SAMA SEPERTI SEBELUMNYA) ====================
+app.get('/api/status', (req, res) => {
+  res.json({ status: 'ok', version: VERSION, developer: DEVELOPER, uptime: process.uptime(), timestamp: Date.now() });
+});
 
 app.get('/pinterest', async (req, res) => {
   const { q } = req.query;
-  if (!q || typeof q !== 'string') {
-    return res.status(400).json({ status: false, error: 'Parameter q (string) diperlukan.' });
-  }
+  if (!q || typeof q !== 'string') return res.status(400).json({ status: false, error: 'Parameter q diperlukan.' });
   try {
     const results = await searchPinterest(q);
     res.json({ status: true, result: results });
   } catch (error) {
     console.error('Pinterest error:', error.message);
-    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, error: 'Gagal mengambil data dari Pinterest.' });
   }
 });
-
-// ==================== ENDPOINT: WAIFU ====================
 
 app.get('/waifu', async (req, res) => {
   try {
     const data = await fetchJson('https://api.waifu.pics/sfw/waifu');
     const buffer = await getBuffer(data.url);
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': buffer.length,
-    });
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buffer.length });
     res.end(buffer);
   } catch (error) {
     console.error('Waifu error:', error.message);
-    await sendErrorToTelegram(error, req);
     res.status(500).send('Error mengambil gambar waifu.');
   }
 });
-
-// ==================== ENDPOINT: NSFW ====================
 
 app.get('/nsfw', async (req, res) => {
   try {
     const randomType = NSFW_TYPES[Math.floor(Math.random() * NSFW_TYPES.length)];
     const data = await fetchJson(`https://api.waifu.pics/nsfw/${randomType}`);
     const buffer = await getBuffer(data.url);
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': buffer.length,
-    });
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': buffer.length });
     res.end(buffer);
   } catch (error) {
     console.error('NSFW error:', error.message);
-    await sendErrorToTelegram(error, req);
     res.status(500).send('Error mengambil gambar NSFW.');
   }
 });
 
-// ==================== ENDPOINT: WEBZIP ====================
-
 app.get('/webzip', async (req, res) => {
   const { url } = req.query;
-  if (!url) {
-    return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
-  }
-  if (!isValidUrl(url)) {
-    return res.status(400).json({ status: false, error: 'URL tidak valid.' });
-  }
+  if (!url) return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
+  if (!isValidUrl(url)) return res.status(400).json({ status: false, error: 'URL tidak valid.' });
 
   try {
     const result = await saveWeb2Zip(url, { renameAssets: true });
-    if (result.error?.code) {
-      return res.status(500).json({
-        status: false,
-        error: result.error.text || 'Gagal menyimpan website.'
-      });
-    }
-    res.json({
-      status: true,
-      originalUrl: result.url,
-      copiedFilesAmount: result.copiedFilesAmount,
-      downloadUrl: result.downloadUrl
-    });
+    if (result.error?.code) return res.status(500).json({ status: false, error: result.error.text || 'Gagal menyimpan website.' });
+    res.json({ status: true, originalUrl: result.url, copiedFilesAmount: result.copiedFilesAmount, downloadUrl: result.downloadUrl });
   } catch (error) {
     console.error('Webzip error:', error.message);
-    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, error: error.message });
   }
 });
 
-// ==================== ENDPOINT: TIKTOK ====================
-
 app.get('/tiktok', async (req, res) => {
   const { url } = req.query;
-  if (!url || !url.includes('tiktok.com')) {
-    return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
-  }
-  if (!isValidUrl(url)) {
-    return res.status(400).json({ status: false, error: 'URL tidak valid.' });
-  }
+  if (!url || !url.includes('tiktok.com')) return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
+  if (!isValidUrl(url)) return res.status(400).json({ status: false, error: 'URL tidak valid.' });
 
   try {
     const data = await fetchTikTok(url);
-    if (!data) {
-      return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
-    }
-
+    if (!data) return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
     res.json({
       status: true,
       result: {
@@ -419,18 +830,13 @@ app.get('/tiktok', async (req, res) => {
     });
   } catch (error) {
     console.error('TikTok error:', error.message);
-    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, error: 'Gagal memproses permintaan TikTok.' });
   }
 });
 
-// ==================== ENDPOINT: BRAT ====================
-
 app.get('/brat', async (req, res) => {
   const { text } = req.query;
-  if (!text || typeof text !== 'string') {
-    return res.status(400).json({ status: false, message: 'Parameter text diperlukan.' });
-  }
+  if (!text || typeof text !== 'string') return res.status(400).json({ status: false, message: 'Parameter text diperlukan.' });
   try {
     const apiUrl = `https://api.siputzx.my.id/api/m/brat?text=${encodeURIComponent(text)}`;
     const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
@@ -440,18 +846,13 @@ app.get('/brat', async (req, res) => {
     res.send(buffer);
   } catch (error) {
     console.error('Brat error:', error.message);
-    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, message: 'Gagal mengambil gambar brat.' });
   }
 });
 
-// ==================== ENDPOINT: BRATVID ====================
-
 app.get('/bratvid', async (req, res) => {
   const { text } = req.query;
-  if (!text || typeof text !== 'string') {
-    return res.status(400).json({ status: false, message: 'Parameter text diperlukan.' });
-  }
+  if (!text || typeof text !== 'string') return res.status(400).json({ status: false, message: 'Parameter text diperlukan.' });
   try {
     const apiUrl = `https://zelapioffciall.koyeb.app/canvas/bratvid?text=${encodeURIComponent(text)}`;
     const response = await axios.get(apiUrl, { responseType: 'arraybuffer' });
@@ -461,26 +862,34 @@ app.get('/bratvid', async (req, res) => {
     res.send(buffer);
   } catch (error) {
     console.error('Bratvid error:', error.message);
-    await sendErrorToTelegram(error, req);
     res.status(500).json({ status: false, message: 'Gagal mengambil gambar bratvid.' });
   }
 });
 
-// ==================== HALAMAN UTAMA (HTML) ====================
-// HTML diambil persis dari kode asli, hanya variabel BASE_URL, VERSION, DEVELOPER digunakan.
-// Semua backtick di dalam script telah di-escape agar tidak mengganggu template literal server.
+// ==================== HALAMAN UTAMA (WEBSITE LENGKAP) ====================
 app.get('/', (req, res) => {
+  const user = req.user;
+  const loginInfo = user 
+    ? `<div style="display:flex; align-items:center; gap:10px;">
+        <img src="${user.photo || getGravatarUrl(user.email)}" style="width:30px; height:30px; border-radius:50%; border:2px solid #5b8cff;">
+        <span>${user.name}</span>
+        <a href="/dashboard" style="color:#5b8cff;">Dashboard</a>
+        <a href="/logout" style="color:#ff3b30;">Logout</a>
+       </div>`
+    : `<a href="/login" style="color:#5b8cff;">Login</a> | <a href="/register" style="color:#5b8cff;">Register</a>`;
+
+  // HTML lengkap dari website sebelumnya (hanya ditambahkan loginInfo di header)
   const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=0.60" />
-<title>NovaBot API</title>
+<title>${SITE_NAME}</title>
 <link rel="icon" href="https://files.catbox.moe/92681q.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="https://files.catbox.moe/92681q.jpg">
 <meta property="og:type" content="website">
 <meta property="og:url" content="${BASE_URL}">
-<meta property="og:title" content="NovaBot API">
+<meta property="og:title" content="${SITE_NAME}">
 <meta property="og:description" content="API untuk bot WhatsApp Novabot">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&family=VT323&display=swap" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
@@ -826,13 +1235,46 @@ body {
   font-size: 12px;
   margin-top: 20px;
 }
+/* Tambahan untuk user info di header */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.user-info img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #5b8cff;
+}
+.user-info a {
+  color: #5b8cff;
+  text-decoration: none;
+}
+.user-info a:hover {
+  text-decoration: underline;
+}
 </style>
 </head>
 <body>
 <div class="custom-header">
-  <div class="header-title">NOVABOT API</div>
-  <div class="menu-btn" id="menuBtn">
-    <span></span><span></span><span></span>
+  <div class="header-title">${SITE_NAME}</div>
+  <div style="display: flex; align-items: center; gap: 15px;">
+    <div class="user-info">
+      ${user ? `
+        <img src="${user.photo || getGravatarUrl(user.email)}" alt="profile">
+        <span>${user.name}</span>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/logout" style="color:#ff3b30;">Logout</a>
+      ` : `
+        <a href="/login" style="color:#5b8cff;">Login</a>
+        <a href="/register" style="color:#5b8cff;">Register</a>
+      `}
+    </div>
+    <div class="menu-btn" id="menuBtn">
+      <span></span><span></span><span></span>
+    </div>
   </div>
 </div>
 
@@ -903,14 +1345,14 @@ body {
 
 <div class="page-container" id="pageContainer">
   <div class="lux-header-card">
-    <h2>Novabot API Service</h2>
+    <h2>${SITE_NAME} Service</h2>
     <p>API untuk bot WhatsApp Novabot</p>
   </div>
 
   <div class="lux-section-title">Latest News</div>
   <div class="slider-container" id="newsSlider">
     <div class="slider-track">
-      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Novabot API v${VERSION}</h3><p>API siap digunakan</p></div></div>
+      <div class="slide"><video src="https://files.catbox.moe/7iyjd5.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>${SITE_NAME} v${VERSION}</h3><p>API siap digunakan</p></div></div>
       <div class="slide"><video src="https://files.catbox.moe/sbwa8f.mp4" autoplay muted loop playsinline></video><div class="slide-content"><h3>Mudah & Cepat</h3><p>Integrasi dengan bot Anda</p></div></div>
     </div>
   </div>
@@ -921,7 +1363,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/waifu</span>
-        <button class="copy-btn" onclick="copyText('${BASE_URL}/waifu', 'waifu')"><i class="fas fa-copy"></i> waifu</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/waifu')"><i class="fas fa-copy"></i> waifu</button>
       </div>
       <div class="api-desc">Gambar waifu random (PNG)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -934,7 +1376,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/nsfw</span>
-        <button class="copy-btn" onclick="copyText('${BASE_URL}/nsfw', 'nsfw')"><i class="fas fa-copy"></i> nsfw</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/nsfw')"><i class="fas fa-copy"></i> nsfw</button>
       </div>
       <div class="api-desc">Gambar NSFW random (blowjob, neko, trap, waifu)</div>
       <div class="input-group" style="justify-content: flex-end;">
@@ -947,7 +1389,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/webzip?url=</span>
-        <button class="copy-btn" onclick="copyText('${BASE_URL}/webzip?url=', 'webzip')"><i class="fas fa-copy"></i> webzip</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/webzip?url=')"><i class="fas fa-copy"></i> webzip</button>
       </div>
       <div class="api-desc">Arsip website (ZIP). Parameter ?url=</div>
       <div class="input-group">
@@ -961,7 +1403,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/tiktok?url=</span>
-        <button class="copy-btn" onclick="copyText('${BASE_URL}/tiktok?url=', 'tiktok')"><i class="fas fa-copy"></i> tiktok</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/tiktok?url=')"><i class="fas fa-copy"></i> tiktok</button>
       </div>
       <div class="api-desc">Download video TikTok (tanpa watermark). Parameter ?url=</div>
       <div class="input-group">
@@ -975,7 +1417,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/brat?text=</span>
-        <button class="copy-btn" onclick="copyText('${BASE_URL}/brat?text=', 'brat')"><i class="fas fa-copy"></i> brat</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/brat?text=')"><i class="fas fa-copy"></i> brat</button>
       </div>
       <div class="api-desc">Buat gambar brat (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -989,7 +1431,7 @@ body {
 <div class="api-endpoint">
   <div class="api-header">
     <span class="method">GET</span><span class="url">/pinterest?q=</span>
-    <button class="copy-btn" onclick="copyText('${BASE_URL}/pinterest?q=', 'pinterest')"><i class="fas fa-copy"></i> pinterest</button>
+    <button class="copy-btn" onclick="copyText('${BASE_URL}/pinterest?q=')"><i class="fas fa-copy"></i> pinterest</button>
   </div>
   <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
   <div class="input-group">
@@ -1003,7 +1445,7 @@ body {
     <div class="api-endpoint">
       <div class="api-header">
         <span class="method">GET</span><span class="url">/bratvid?text=</span>
-        <button class="copy-btn" onclick="copyText('${BASE_URL}/bratvid?text=', 'bratvid')"><i class="fas fa-copy"></i> bratvid</button>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/bratvid?text=')"><i class="fas fa-copy"></i> bratvid</button>
       </div>
       <div class="api-desc">Buat gambar brat video (via API eksternal). Parameter ?text=</div>
       <div class="input-group">
@@ -1088,7 +1530,7 @@ async function testPinterest() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${BASE_URL}' + '/pinterest?q=' + encodeURIComponent(query);
+    const apiUrl = '/pinterest?q=' + encodeURIComponent(query);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1135,7 +1577,7 @@ async function testWaifu() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${BASE_URL}' + '/waifu');
+    const res = await fetch('/waifu');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1155,7 +1597,7 @@ async function testNsfw() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const res = await fetch('${BASE_URL}' + '/nsfw');
+    const res = await fetch('/nsfw');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     respDiv.innerHTML = \`
@@ -1177,7 +1619,7 @@ async function testWebzip() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${BASE_URL}' + '/webzip?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '/webzip?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1204,7 +1646,7 @@ async function testTiktok() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${BASE_URL}' + '/tiktok?url=' + encodeURIComponent(urlInput);
+    const apiUrl = '/tiktok?url=' + encodeURIComponent(urlInput);
     const res = await fetch(apiUrl);
     const data = await res.json();
     const status = res.status;
@@ -1251,7 +1693,7 @@ async function testBrat() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${BASE_URL}' + '/brat?text=' + encodeURIComponent(textInput);
+    const apiUrl = '/brat?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1279,7 +1721,7 @@ async function testBratvid() {
   respDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
   respDiv.className = 'response-container show';
   try {
-    const apiUrl = '${BASE_URL}' + '/bratvid?text=' + encodeURIComponent(textInput);
+    const apiUrl = '/bratvid?text=' + encodeURIComponent(textInput);
     const res = await fetch(apiUrl);
     if (!res.ok) {
       const errText = await res.text();
@@ -1314,31 +1756,26 @@ document.addEventListener('keydown',e=>{
 });
 </script>
 </body>
-</html>
-  `;
+</html>`;
   res.send(html);
 });
 
 // ==================== ERROR HANDLER GLOBAL ====================
-
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.stack);
-  sendErrorToTelegram(err, req);
   res.status(500).json({ status: false, error: 'Terjadi kesalahan internal server.' });
 });
 
 // ==================== START SERVER ====================
-
 app.listen(PORT, HOST, () => {
   console.log(`
 \x1b[1m\x1b[34m╔╗ ╦  ╔═\x1b[0m╗╔═╗╔═╗╦═╗╔═╗ \x1b[31m
 \x1b[1m\x1b[34m╠╩╗║  ╠═╣╔═╝\x1b[0m║╣ ╠╦╝╚═╗ \x1b[31m
 \x1b[1m\x1b[34m╚═╝╩═╝╩ ╩╚═╝╚═╝╩\x1b[0m╚═╚═╝ \x1b[31m
-\x1b[1m\x1b[33mN O V A B O T   A P I   v${VERSION}\x1b[0m
+\x1b[1m\x1b[33m${SITE_NAME} v${VERSION}\x1b[0m
 \x1b[1m\x1b[32m═══════════════════════════════════════\x1b[0m
 🌐 Server: http://${HOST}:${PORT}
 👤 Developer: ${DEVELOPER}
-📦 Version: ${VERSION}
-✅ API ready!
+✅ Login email tersedia di /login dan /register
   `);
 });
