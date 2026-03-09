@@ -1,8 +1,3 @@
-// ==================== index.js ====================
-// Novabot API - Versi Lengkap dengan Autentikasi Email (Single File)
-// Semua fitur API tetap berfungsi + login dengan email + dashboard foto profil (Gravatar)
-// Tampilan website utama tidak berubah, hanya ditambahkan tombol login/profile di header
-
 const express = require('express');
 const axios = require('axios');
 const cloudscraper = require('cloudscraper');
@@ -18,10 +13,13 @@ const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcrypt');
 const flash = require('connect-flash');
-const Database = require('better-sqlite3');
 const crypto = require('crypto');
+const path = require('path');
+const { Octokit } = require('@octokit/rest');
+const multer = require('multer');
+const config = require('./setting.js');
 
-// ==================== index.js (bagian konfigurasi) ====================
+// ==================== KONFIGURASI ====================
 const PORT = config.PORT || 8080;
 const HOST = config.HOST || 'localhost';
 const BASE_URL = config.URL || `http://${HOST}:${PORT}`;
@@ -29,6 +27,17 @@ const SESSION_SECRET = config.SESSION_SECRET || 'novabot-super-secret-2026';
 const VERSION = config.VERSI_WEB || '1.0';
 const DEVELOPER = config.DEVELOPER || '@Novabot403';
 const SITE_NAME = config.SITE_NAME || 'NovaBot API';
+
+// GitHub config (akan diinisialisasi async)
+let GITHUB_TOKEN = null;
+let GITHUB_REPO = null; // format "owner/repo"
+let GITHUB_BRANCH = 'main';
+let GITHUB_PATH = 'file';
+let octokit = null;
+let owner, repo;
+
+// Multer untuk upload file (memory storage)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }); // max 5MB
 
 // HTTPS Agent untuk Pinterest
 const httpsAgent = new https.Agent({
@@ -40,104 +49,266 @@ const httpsAgent = new https.Agent({
 // Daftar tipe NSFW
 const NSFW_TYPES = ['blowjob', 'neko', 'trap', 'waifu'];
 
-// ==================== DATABASE SQLITE ====================
-const db = new Database('database.sqlite');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    password TEXT,
-    name TEXT,
-    photo TEXT, -- menyimpan URL gravatar
-    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
+// ==================== GITHUB INITIALIZATION ====================
+async function initGithub() {
+  const tokenConfig = config.GITHUB_TOKEN;
+  if (!tokenConfig) {
+    console.error('GITHUB_TOKEN tidak dikonfigurasi. Aplikasi tidak dapat berjalan.');
+    process.exit(1);
+  }
 
-// ==================== PASSPORT CONFIGURATION ====================
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
+  // Ambil konfigurasi dari URL JSON
+  if (tokenConfig.startsWith('http://') || tokenConfig.startsWith('https://')) {
+    try {
+      console.log('Mengambil konfigurasi GitHub dari URL:', tokenConfig);
+      const response = await axios.get(tokenConfig);
+      const data = response.data;
+      GITHUB_TOKEN = data.github_token;
+      GITHUB_REPO = data.github_repo;
+      GITHUB_BRANCH = data.github_branch || 'main';
+      GITHUB_PATH = data.github_path || 'file';
+      if (!GITHUB_TOKEN || !GITHUB_REPO) {
+        throw new Error('Token atau repo tidak ditemukan dalam response JSON');
+      }
+    } catch (error) {
+      console.error('Gagal mengambil konfigurasi GitHub dari URL:', error.message);
+      process.exit(1);
+    }
+  } else {
+    console.error('GITHUB_TOKEN harus berupa URL JSON yang berisi token dan repo.');
+    process.exit(1);
+  }
 
-passport.deserializeUser((id, done) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-  done(null, user);
-});
+  if (GITHUB_TOKEN) {
+    octokit = new Octokit({ auth: GITHUB_TOKEN });
+    [owner, repo] = GITHUB_REPO.split('/');
+    console.log(`GitHub siap: owner=${owner}, repo=${repo}, branch=${GITHUB_BRANCH}, path=${GITHUB_PATH}`);
+  }
+}
 
-// Strategy Local (Email/Password)
-passport.use(new LocalStrategy({ usernameField: 'email' }, (email, password, done) => {
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user) return done(null, false, { message: 'Email tidak terdaftar' });
-  
-  bcrypt.compare(password, user.password, (err, isValid) => {
-    if (err) return done(err);
-    if (!isValid) return done(null, false, { message: 'Password salah' });
-    return done(null, user);
+// ==================== FUNGSI BACA/TULIS GITHUB ====================
+async function readGitHubFile(filePath) {
+  if (!octokit) throw new Error('GitHub tidak tersedia');
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path: filePath,
+      ref: GITHUB_BRANCH,
+    });
+    const content = Buffer.from(data.content, 'base64').toString();
+    return { content: JSON.parse(content), sha: data.sha };
+  } catch (error) {
+    if (error.status === 404) {
+      return { content: null, sha: null };
+    }
+    throw error;
+  }
+}
+
+async function writeGitHubFile(filePath, content, sha = null, message = 'Update file') {
+  if (!octokit) throw new Error('GitHub tidak tersedia');
+  await octokit.repos.createOrUpdateFileContents({
+    owner,
+    repo,
+    path: filePath,
+    message,
+    content: Buffer.from(JSON.stringify(content, null, 2)).toString('base64'),
+    branch: GITHUB_BRANCH,
+    sha,
   });
-}));
+}
 
-// ==================== INISIALISASI EXPRESS ====================
-const app = express();
+async function writeGitHubFileWithRetry(filePath, content, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const { sha } = await readGitHubFile(filePath);
+      await writeGitHubFile(filePath, content, sha, 'Update file');
+      return;
+    } catch (error) {
+      if (error.status === 409 && i < maxRetries - 1) {
+        console.log(`Konflik saat menulis ${filePath}, mencoba lagi... (${i+1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 100 * (i+1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
 
-// Middleware umum
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors());
-app.use(compression());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
+// Fungsi untuk menghapus file di GitHub
+async function deleteGitHubFile(filePath) {
+  if (!octokit) throw new Error('GitHub tidak tersedia');
+  try {
+    const { sha } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path: filePath,
+      ref: GITHUB_BRANCH,
+    }).then(res => res.data);
+    await octokit.repos.deleteFile({
+      owner,
+      repo,
+      path: filePath,
+      message: `Delete file ${filePath}`,
+      sha,
+      branch: GITHUB_BRANCH,
+    });
+    console.log(`File ${filePath} berhasil dihapus`);
+  } catch (error) {
+    if (error.status === 404) {
+      // File tidak ada, abaikan
+      return;
+    }
+    throw error;
+  }
+}
 
-// Session
-app.use(session({
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 1 hari
-}));
+// ==================== FUNGSI MANAJEMEN USER ====================
+async function getUsers() {
+  const filePath = `${GITHUB_PATH}/users.json`.replace(/\/+/g, '/');
+  const { content } = await readGitHubFile(filePath);
+  return content || [];
+}
 
-// Passport
-app.use(passport.initialize());
-app.use(passport.session());
-app.use(flash());
+async function saveUsers(users) {
+  const filePath = `${GITHUB_PATH}/users.json`.replace(/\/+/g, '/');
+  await writeGitHubFileWithRetry(filePath, users);
+}
 
-// Rate limiting untuk API
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { status: false, error: 'Terlalu banyak permintaan, coba lagi nanti.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api', limiter);
+async function findUserByEmail(email) {
+  const users = await getUsers();
+  return users.find(u => u.email === email);
+}
+
+async function findUserById(id) {
+  const users = await getUsers();
+  return users.find(u => u.id === id);
+}
+
+async function createUser(userData) {
+  const users = await getUsers();
+  const newId = users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1;
+  const newUser = { id: newId, ...userData, createdAt: new Date().toISOString() };
+  users.push(newUser);
+  await saveUsers(users);
+  return newUser;
+}
+
+async function updateUser(id, updatedFields) {
+  const users = await getUsers();
+  const index = users.findIndex(u => u.id === id);
+  if (index === -1) return null;
+  users[index] = { ...users[index], ...updatedFields };
+  await saveUsers(users);
+  return users[index];
+}
+
+// ==================== FUNGSI MANAJEMEN PESAN (CHAT) ====================
+async function getMessages() {
+  const filePath = `${GITHUB_PATH}/messages.json`.replace(/\/+/g, '/');
+  const { content } = await readGitHubFile(filePath);
+  return (content || []).map(m => ({ ...m, parentId: m.parentId || null }));
+}
+
+async function saveMessages(messages) {
+  const filePath = `${GITHUB_PATH}/messages.json`.replace(/\/+/g, '/');
+  await writeGitHubFileWithRetry(filePath, messages);
+}
+
+async function addMessage(messageData) {
+  const messages = await getMessages();
+  const newId = messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1;
+  const newMessage = {
+    id: newId,
+    ...messageData,
+    parentId: messageData.parentId || null,
+    createdAt: new Date().toISOString()
+  };
+  messages.push(newMessage);
+  await saveMessages(messages);
+  return newMessage;
+}
+
+// ==================== FUNGSI MANAJEMEN KOMENTAR (LAMA) ====================
+async function getComments() {
+  const filePath = `${GITHUB_PATH}/comments.json`.replace(/\/+/g, '/');
+  const { content } = await readGitHubFile(filePath);
+  return content || [];
+}
+
+async function saveComments(comments) {
+  const filePath = `${GITHUB_PATH}/comments.json`.replace(/\/+/g, '/');
+  await writeGitHubFileWithRetry(filePath, comments);
+}
+
+async function addComment(commentData) {
+  const comments = await getComments();
+  const newId = comments.length > 0 ? Math.max(...comments.map(c => c.id)) + 1 : 1;
+  const newComment = { id: newId, ...commentData, createdAt: new Date().toISOString() };
+  comments.push(newComment);
+  await saveComments(comments);
+  return newComment;
+}
+
+// ==================== FUNGSI UPLOAD FOTO KE GITHUB (dengan penghapusan file lama) ====================
+async function uploadAvatarToGitHub(userId, fileBuffer, fileName, mimeType, oldPhotoUrl) {
+  if (!octokit) throw new Error('GitHub tidak tersedia');
+
+  // Tentukan ekstensi dari file yang diupload
+  const ext = path.extname(fileName) || '.jpg';
+  const newFileName = `avatar_${userId}${ext}`;
+  const filePath = `avatars/${newFileName}`;
+
+  // Hapus file lama jika ada dan berbeda path
+  if (oldPhotoUrl) {
+    try {
+      // Ekstrak path dari URL lama
+      const urlParts = oldPhotoUrl.split('/');
+      const oldFilePath = urlParts.slice(urlParts.indexOf('avatars')).join('/');
+      if (oldFilePath !== filePath) {
+        await deleteGitHubFile(oldFilePath);
+      }
+    } catch (error) {
+      console.error('Gagal menghapus file lama:', error.message);
+      // Tetap lanjutkan upload
+    }
+  }
+
+  // Upload file baru
+  try {
+    await octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path: filePath,
+      message: `Upload avatar for user ${userId}`,
+      content: fileBuffer.toString('base64'),
+      branch: GITHUB_BRANCH,
+    });
+    const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${GITHUB_BRANCH}/${filePath}`;
+    return rawUrl;
+  } catch (error) {
+    console.error('Gagal upload avatar ke GitHub:', error.message);
+    throw error;
+  }
+}
 
 // ==================== FUNGSI HELPER ====================
-
-/**
- * Mendapatkan URL Gravatar dari email
- */
 function getGravatarUrl(email, size = 200) {
   const hash = crypto.createHash('md5').update(email.trim().toLowerCase()).digest('hex');
   return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=identicon`;
 }
 
-/**
- * Fetch JSON dari URL
- */
 async function fetchJson(url) {
   const res = await axios.get(url);
   return res.data;
 }
 
-/**
- * Ambil buffer dari URL
- */
 async function getBuffer(url) {
   const res = await axios.get(url, { responseType: 'arraybuffer' });
   return Buffer.from(res.data);
 }
 
-/**
- * Format angka (K, M)
- */
 function formatNumber(num) {
   if (!num) return '0';
   if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
@@ -145,19 +316,13 @@ function formatNumber(num) {
   return num.toString();
 }
 
-/**
- * Format durasi (detik ke MM:SS)
- */
 function formatDuration(seconds) {
-if (!seconds) return 'N/A';
-const mins = Math.floor(seconds / 60);
-const secs = seconds % 60;
-return `${mins}:${secs.toString().padStart(2, '0')}`;
+  if (!seconds) return 'N/A';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-/**
- * Format uptime
- */
 function formatUptime(seconds) {
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
@@ -166,14 +331,10 @@ function formatUptime(seconds) {
   return `${d}d ${h}h ${m}m ${s}s`;
 }
 
-/**
- * Validasi URL
- */
 function isValidUrl(url) {
   return validator.isURL(url, { require_protocol: true, protocols: ['http', 'https'] });
 }
 
-// ==================== MIDDLEWARE CEK LOGIN ====================
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) return next();
   res.redirect('/login');
@@ -327,22 +488,76 @@ async function fetchTikTok(url) {
   return response.data.data;
 }
 
-// ==================== ROUTE AUTENTIKASI ====================
+// ==================== PASSPORT CONFIGURATION ====================
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
 
-// Halaman login
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await findUserById(id);
+    done(null, user);
+  } catch (err) {
+    done(err, null);
+  }
+});
+
+passport.use(new LocalStrategy({ usernameField: 'email' }, async (email, password, done) => {
+  try {
+    const user = await findUserByEmail(email);
+    if (!user) return done(null, false, { message: 'Email tidak terdaftar' });
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) return done(null, false, { message: 'Password salah' });
+    return done(null, user);
+  } catch (err) {
+    return done(err);
+  }
+}));
+
+// ==================== INISIALISASI EXPRESS ====================
+const app = express();
+
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors());
+app.use(compression());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
+
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+app.use(flash());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { status: false, error: 'Terlalu banyak permintaan, coba lagi nanti.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', limiter);
+
+// ==================== ROUTE AUTENTIKASI ====================
 app.get('/login', (req, res) => {
-  if (req.isAuthenticated()) return res.redirect('/dashboard');
+  if (req.isAuthenticated()) return res.redirect('/profile');
   const error = req.flash('error')[0];
   const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=0.65">
   <title>Login - ${SITE_NAME}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
     body {
-      background: #0a0c14;
+      background: radial-gradient(circle at 10% 20%, #1a2a48, #0a0c14);
       display: flex;
       justify-content: center;
       align-items: center;
@@ -350,13 +565,19 @@ app.get('/login', (req, res) => {
       color: #fff;
     }
     .login-box {
-      background: #0f1320;
-      border: 1px solid #1f2a40;
-      border-radius: 16px;
+      background: rgba(15, 19, 32, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid #2a3a60;
+      border-radius: 24px;
       padding: 40px;
       width: 400px;
-      box-shadow: 0 0 30px rgba(0,0,0,0.7);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px #5b8cff33;
       text-align: center;
+      animation: glow 3s infinite alternate;
+    }
+    @keyframes glow {
+      0% { box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px #5b8cff33; }
+      100% { box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 40px #5b8cff80; }
     }
     h2 {
       font-family: 'Orbitron', sans-serif;
@@ -364,6 +585,7 @@ app.get('/login', (req, res) => {
       margin-bottom: 10px;
       font-size: 28px;
       letter-spacing: 2px;
+      text-shadow: 0 0 10px #5b8cff;
     }
     .sub {
       color: #8a9bb0;
@@ -385,32 +607,40 @@ app.get('/login', (req, res) => {
     input {
       width: 100%;
       padding: 12px;
-      border-radius: 8px;
+      border-radius: 30px;
       border: 1px solid #1f2a40;
       background: #1a1f30;
       color: #fff;
       font-size: 14px;
+      transition: 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #5b8cff;
+      box-shadow: 0 0 10px #5b8cff;
     }
     button {
       width: 100%;
       padding: 12px;
-      background: #5b8cff;
+      background: linear-gradient(45deg, #5b8cff, #3a6df0);
       border: none;
-      border-radius: 8px;
+      border-radius: 30px;
       color: #000;
       font-weight: bold;
       cursor: pointer;
       margin: 10px 0;
       font-size: 16px;
+      transition: 0.2s;
     }
     button:hover {
-      filter: brightness(1.1);
+      transform: scale(1.02);
+      box-shadow: 0 0 20px #5b8cff;
     }
     .error {
       background: #ff3b30;
       color: #fff;
       padding: 10px;
-      border-radius: 8px;
+      border-radius: 30px;
       margin-bottom: 20px;
       font-size: 14px;
     }
@@ -436,9 +666,7 @@ app.get('/login', (req, res) => {
   <div class="login-box">
     <h2>🔐 ${SITE_NAME}</h2>
     <div class="sub">private access • encrypted session</div>
-    
     ${error ? `<div class="error">${error}</div>` : ''}
-    
     <form action="/login" method="POST">
       <div class="input-group">
         <label>EMAIL</label>
@@ -450,11 +678,9 @@ app.get('/login', (req, res) => {
       </div>
       <button type="submit">LOGIN</button>
     </form>
-    
     <p style="margin: 15px 0;">
       <a href="/register" class="link">Belum punya akun? Daftar</a>
     </p>
-    
     <div class="footer">
       <span>AES-256</span> • status: ONLINE • PING 19ms
     </div>
@@ -464,20 +690,19 @@ app.get('/login', (req, res) => {
   res.send(html);
 });
 
-// Halaman register
 app.get('/register', (req, res) => {
-  if (req.isAuthenticated()) return res.redirect('/dashboard');
+  if (req.isAuthenticated()) return res.redirect('/profile');
   const error = req.flash('error')[0];
   const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=0.65">
   <title>Register - ${SITE_NAME}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
     body {
-      background: #0a0c14;
+      background: radial-gradient(circle at 10% 20%, #1a2a48, #0a0c14);
       display: flex;
       justify-content: center;
       align-items: center;
@@ -485,13 +710,19 @@ app.get('/register', (req, res) => {
       color: #fff;
     }
     .register-box {
-      background: #0f1320;
-      border: 1px solid #1f2a40;
-      border-radius: 16px;
+      background: rgba(15, 19, 32, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid #2a3a60;
+      border-radius: 24px;
       padding: 40px;
       width: 400px;
-      box-shadow: 0 0 30px rgba(0,0,0,0.7);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px #5b8cff33;
       text-align: center;
+      animation: glow 3s infinite alternate;
+    }
+    @keyframes glow {
+      0% { box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px #5b8cff33; }
+      100% { box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 40px #5b8cff80; }
     }
     h2 {
       font-family: 'Orbitron', sans-serif;
@@ -499,6 +730,7 @@ app.get('/register', (req, res) => {
       margin-bottom: 10px;
       font-size: 28px;
       letter-spacing: 2px;
+      text-shadow: 0 0 10px #5b8cff;
     }
     .sub {
       color: #8a9bb0;
@@ -520,32 +752,40 @@ app.get('/register', (req, res) => {
     input {
       width: 100%;
       padding: 12px;
-      border-radius: 8px;
+      border-radius: 30px;
       border: 1px solid #1f2a40;
       background: #1a1f30;
       color: #fff;
       font-size: 14px;
+      transition: 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #5b8cff;
+      box-shadow: 0 0 10px #5b8cff;
     }
     button {
       width: 100%;
       padding: 12px;
-      background: #5b8cff;
+      background: linear-gradient(45deg, #5b8cff, #3a6df0);
       border: none;
-      border-radius: 8px;
+      border-radius: 30px;
       color: #000;
       font-weight: bold;
       cursor: pointer;
       margin: 10px 0;
       font-size: 16px;
+      transition: 0.2s;
     }
     button:hover {
-      filter: brightness(1.1);
+      transform: scale(1.02);
+      box-shadow: 0 0 20px #5b8cff;
     }
     .error {
       background: #ff3b30;
       color: #fff;
       padding: 10px;
-      border-radius: 8px;
+      border-radius: 30px;
       margin-bottom: 20px;
       font-size: 14px;
     }
@@ -571,9 +811,7 @@ app.get('/register', (req, res) => {
   <div class="register-box">
     <h2>📝 ${SITE_NAME}</h2>
     <div class="sub">create new account</div>
-    
     ${error ? `<div class="error">${error}</div>` : ''}
-    
     <form action="/register" method="POST">
       <div class="input-group">
         <label>NAMA</label>
@@ -589,11 +827,9 @@ app.get('/register', (req, res) => {
       </div>
       <button type="submit">DAFTAR</button>
     </form>
-    
     <p style="margin: 15px 0;">
       <a href="/login" class="link">Sudah punya akun? Login</a>
     </p>
-    
     <div class="footer">
       <span>AES-256</span> • status: ONLINE • PING 19ms
     </div>
@@ -603,7 +839,6 @@ app.get('/register', (req, res) => {
   res.send(html);
 });
 
-// Proses register
 app.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
@@ -614,131 +849,34 @@ app.post('/register', async (req, res) => {
     req.flash('error', 'Password minimal 6 karakter');
     return res.redirect('/register');
   }
-  // Cek email sudah terdaftar
-  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (existing) {
-    req.flash('error', 'Email sudah digunakan');
-    return res.redirect('/register');
+  try {
+    const existing = await findUserByEmail(email);
+    if (existing) {
+      req.flash('error', 'Email sudah digunakan');
+      return res.redirect('/register');
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await createUser({
+      email,
+      password: hashedPassword,
+      name,
+      bio: '',
+      photo: '',
+    });
+    res.redirect('/login');
+  } catch (err) {
+    console.error(err);
+    req.flash('error', 'Terjadi kesalahan, coba lagi');
+    res.redirect('/register');
   }
-  // Hash password
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const photo = getGravatarUrl(email);
-  const stmt = db.prepare('INSERT INTO users (email, password, name, photo) VALUES (?, ?, ?, ?)');
-  stmt.run(email, hashedPassword, name, photo);
-  res.redirect('/login');
 });
 
-// Proses login
 app.post('/login', passport.authenticate('local', {
-  successRedirect: '/dashboard',
+  successRedirect: '/profile',
   failureRedirect: '/login',
   failureFlash: true
 }));
 
-// Dashboard (hanya untuk yang sudah login)
-app.get('/dashboard', isAuthenticated, (req, res) => {
-  const user = req.user;
-  const photo = user.photo || getGravatarUrl(user.email);
-  const html = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard - ${SITE_NAME}</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
-    body {
-      background: #0a0c14;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      color: #fff;
-    }
-    .dashboard {
-      background: #0f1320;
-      border: 1px solid #1f2a40;
-      border-radius: 16px;
-      padding: 40px;
-      width: 450px;
-      text-align: center;
-      box-shadow: 0 0 30px rgba(0,0,0,0.7);
-    }
-    .avatar {
-      width: 120px;
-      height: 120px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 4px solid #5b8cff;
-      margin-bottom: 20px;
-    }
-    h2 {
-      font-family: 'Orbitron', sans-serif;
-      color: #5b8cff;
-      margin-bottom: 10px;
-    }
-    .info {
-      background: #1a1f30;
-      border-radius: 12px;
-      padding: 20px;
-      margin: 20px 0;
-      text-align: left;
-      border-left: 4px solid #5b8cff;
-    }
-    .info p {
-      margin: 8px 0;
-      color: #a0b0c0;
-    }
-    .info strong {
-      color: #fff;
-      width: 80px;
-      display: inline-block;
-    }
-    .logout-btn {
-      background: #ff3b30;
-      color: #fff;
-      border: none;
-      padding: 12px 30px;
-      border-radius: 40px;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: 0.2s;
-      text-decoration: none;
-      display: inline-block;
-    }
-    .logout-btn:hover {
-      filter: brightness(1.1);
-      transform: scale(1.02);
-    }
-    .footer {
-      margin-top: 30px;
-      color: #5f6b7a;
-      font-size: 12px;
-    }
-  </style>
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
-</head>
-<body>
-  <div class="dashboard">
-    <img src="${photo}" class="avatar" alt="Foto Profil">
-    <h2>Halo, ${user.name}!</h2>
-    <div class="info">
-      <p><strong>Email</strong> ${user.email}</p>
-      <p><strong>ID</strong> ${user.id}</p>
-      <p><strong>Bergabung</strong> ${new Date(user.createdAt).toLocaleDateString('id-ID')}</p>
-    </div>
-    <a href="/logout" class="logout-btn">🚪 KELUAR</a>
-    <div class="footer">
-      <span>${SITE_NAME} v${VERSION}</span> • ${DEVELOPER}
-    </div>
-  </div>
-</body>
-</html>`;
-  res.send(html);
-});
-
-// Logout
 app.get('/logout', (req, res) => {
   req.logout(err => {
     if (err) console.error(err);
@@ -746,7 +884,933 @@ app.get('/logout', (req, res) => {
   });
 });
 
-// ==================== ROUTE API (SAMA SEPERTI SEBELUMNYA) ====================
+// ==================== ROUTE PROFIL ====================
+app.get('/profile', isAuthenticated, (req, res) => {
+  const user = req.user;
+  const photoUrl = user.photo || getGravatarUrl(user.email, 200);
+  const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=0.65">
+  <title>Profil - ${SITE_NAME}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
+    body {
+      background: radial-gradient(circle at 10% 20%, #1a2a48, #0a0c14);
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .profile-container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: rgba(15, 19, 32, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid #2a3a60;
+      border-radius: 24px;
+      padding: 30px;
+      position: relative;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px #5b8cff33;
+      animation: glow 3s infinite alternate;
+    }
+    @keyframes glow {
+      0% { box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px #5b8cff33; }
+      100% { box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 40px #5b8cff80; }
+    }
+    .menu-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: transparent;
+      border: none;
+      color: #8a9bb0;
+      font-size: 28px;
+      cursor: pointer;
+      transition: 0.2s;
+      z-index: 10;
+    }
+    .menu-btn:hover {
+      color: #fff;
+      transform: scale(1.1);
+    }
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      top: 60px;
+      right: 20px;
+      background: #0f1320;
+      border: 1px solid #2a3a60;
+      border-radius: 12px;
+      min-width: 160px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.7);
+      z-index: 100;
+      overflow: hidden;
+    }
+    .dropdown-content a, .dropdown-content button {
+      color: #fff;
+      padding: 12px 16px;
+      text-decoration: none;
+      display: block;
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
+      font-size: 14px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .dropdown-content a:hover, .dropdown-content button:hover {
+      background: #1a1f30;
+      color: #5b8cff;
+    }
+    .show {
+      display: block;
+    }
+    .avatar-section {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .avatar {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      border: 4px solid #5b8cff;
+      box-shadow: 0 0 30px #5b8cff;
+      object-fit: cover;
+    }
+    .user-name {
+      font-size: 28px;
+      font-family: 'Orbitron', sans-serif;
+      color: #5b8cff;
+      text-align: center;
+      margin: 10px 0 5px;
+    }
+    .user-bio {
+      font-size: 16px;
+      color: #ccc;
+      text-align: center;
+      margin-bottom: 30px;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
+      word-wrap: break-word;
+    }
+    .edit-form {
+      display: none;
+      margin-top: 30px;
+      border-top: 1px solid #1f2a40;
+      padding-top: 20px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #8a9bb0;
+      font-size: 14px;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 12px 20px;
+      border-radius: 30px;
+      border: 1px solid #1f2a40;
+      background: #1a1f30;
+      color: #fff;
+      font-size: 14px;
+      transition: 0.2s;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #5b8cff;
+      box-shadow: 0 0 10px #5b8cff;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    button {
+      background: linear-gradient(45deg, #5b8cff, #3a6df0);
+      color: #000;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 30px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:hover {
+      transform: scale(1.02);
+      box-shadow: 0 0 20px #5b8cff;
+    }
+    .join-group {
+      text-align: center;
+      margin-top: 30px;
+    }
+    .join-group a {
+      display: inline-block;
+      background: linear-gradient(45deg, #5b8cff, #3a6df0);
+      color: #000;
+      padding: 15px 40px;
+      border-radius: 50px;
+      font-size: 18px;
+      font-weight: bold;
+      text-decoration: none;
+      transition: 0.2s;
+    }
+    .join-group a:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px #5b8cff;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 40px;
+      color: #5f6b7a;
+      font-size: 12px;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+  <div class="profile-container">
+    <button class="menu-btn" id="menuBtn">☰</button>
+    <div class="dropdown-content" id="dropdown">
+      <a href="/"><i class="fas fa-home"></i> Beranda</a>
+      <a href="#" id="editProfileBtn"><i class="fas fa-edit"></i> Edit Profil</a>
+      <a href="/logout"><i class="fas fa-sign-out-alt"></i> Keluar Akun</a>
+    </div>
+
+    <div class="avatar-section">
+      <img src="${photoUrl}" class="avatar" id="avatarPreview" alt="Foto Profil">
+    </div>
+    <div class="user-name" id="displayName">${user.name}</div>
+    <div class="user-bio" id="displayBio">${user.bio || 'Belum ada bio.'}</div>
+
+    <!-- Form Edit (hidden by default) -->
+    <div class="edit-form" id="editForm">
+      <h3 style="font-family:'Orbitron'; color:#5b8cff; margin-bottom:20px;">Edit Profil</h3>
+      <form id="profileEditForm" enctype="multipart/form-data">
+        <div class="form-group">
+          <label>Nama</label>
+          <input type="text" name="name" id="editName" value="${user.name}" required>
+        </div>
+        <div class="form-group">
+          <label>Bio</label>
+          <textarea name="bio" id="editBio">${user.bio || ''}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Foto Profil</label>
+          <input type="file" name="photo" id="editPhoto" accept="image/*">
+        </div>
+        <button type="submit">Simpan Perubahan</button>
+      </form>
+    </div>
+
+    <!-- Tombol Join Grup -->
+    <div class="join-group">
+      <a href="/chat"><i class="fas fa-comments"></i> Join Grup Diskusi</a>
+    </div>
+
+    <div class="footer">
+      <span>${SITE_NAME} v${VERSION}</span> • ${DEVELOPER}
+    </div>
+  </div>
+
+  <script>
+    // Dropdown menu
+    const menuBtn = document.getElementById('menuBtn');
+    const dropdown = document.getElementById('dropdown');
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('show');
+    });
+    window.addEventListener('click', () => {
+      dropdown.classList.remove('show');
+    });
+
+    // Toggle edit form
+    document.getElementById('editProfileBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('editForm').style.display = 'block';
+      dropdown.classList.remove('show');
+    });
+
+    // Handle edit form submission with photo upload
+    document.getElementById('profileEditForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData();
+      formData.append('name', document.getElementById('editName').value);
+      formData.append('bio', document.getElementById('editBio').value);
+      const photoFile = document.getElementById('editPhoto').files[0];
+      if (photoFile) {
+        formData.append('photo', photoFile);
+      }
+
+      const res = await fetch('/profile', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+      if (result.success) {
+        alert('Profil berhasil diperbarui!');
+        location.reload(); // refresh untuk menampilkan data baru
+      } else {
+        alert('Gagal: ' + result.error);
+      }
+    });
+  </script>
+</body>
+</html>`;
+  res.send(html);
+});
+
+// Endpoint untuk update profil (dengan upload foto)
+app.post('/profile', isAuthenticated, upload.single('photo'), async (req, res) => {
+  const { name, bio } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Nama tidak boleh kosong' });
+  }
+
+  let photoUrl = req.user.photo; // tetap pakai yang lama jika tidak ada upload
+  if (req.file) {
+    try {
+      // Upload foto baru, hapus yang lama
+      photoUrl = await uploadAvatarToGitHub(req.user.id, req.file.buffer, req.file.originalname, req.file.mimetype, req.user.photo);
+    } catch (err) {
+      return res.status(500).json({ error: 'Gagal upload foto: ' + err.message });
+    }
+  }
+
+  try {
+    const updatedUser = await updateUser(req.user.id, { name, bio, photo: photoUrl });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Gagal menyimpan profil' });
+  }
+});
+
+// ==================== ROUTE CHAT (MODERN, WHATSAPP-LIKE) ====================
+app.get('/chat', isAuthenticated, (req, res) => {
+  const user = req.user;
+  const photoUrl = user.photo || getGravatarUrl(user.email, 40);
+  const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <!-- Viewport yang optimal untuk fullscreen -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Chat Grup - ${SITE_NAME}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    
+    html {
+      /* Mencegah scrolling yang menyebabkan URL bar muncul */
+      overflow: hidden;
+      height: 100%;
+    }
+    
+    body {
+      background: #0a0c14;
+      color: #fff;
+      height: 100dvh; /* Menggunakan dvh untuk menyesuaikan dengan dynamic viewport */
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: fixed; /* Membantu menjaga fullscreen */
+      width: 100%;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+    
+    /* Glassmorphism header */
+    .chat-header {
+      background: rgba(15, 19, 32, 0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(42, 58, 96, 0.3);
+      padding: 15px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    
+    .chat-header h2 {
+      font-family: 'Orbitron';
+      color: #5b8cff;
+      font-size: 24px;
+      text-shadow: 0 0 10px rgba(91, 140, 255, 0.3);
+    }
+    
+    .chat-header a {
+      color: #8a9bb0;
+      text-decoration: none;
+      font-size: 14px;
+      transition: 0.2s;
+      padding: 8px 15px;
+      border-radius: 30px;
+      background: rgba(26, 31, 48, 0.5);
+      backdrop-filter: blur(4px);
+    }
+    
+    .chat-header a:hover {
+      color: #5b8cff;
+      background: rgba(91, 140, 255, 0.1);
+    }
+    
+    /* Messages container dengan scroll internal */
+    .messages-container {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch; /* Smooth scroll di iOS */
+      padding: 20px 20px 15px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scroll-behavior: smooth;
+      background: radial-gradient(circle at 10% 20%, rgba(26, 42, 72, 0.3), #0a0c14);
+    }
+    
+    /* Message item dengan swipe detection */
+    .message {
+      display: flex;
+      gap: 10px;
+      max-width: 80%;
+      position: relative;
+      transition: transform 0.2s ease;
+      will-change: transform;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    
+    .message.own {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    
+    /* Avatar dengan efek glow */
+    .message-avatar {
+      flex-shrink: 0;
+    }
+    
+    .message-avatar img {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid #5b8cff;
+      object-fit: cover;
+      box-shadow: 0 0 15px rgba(91, 140, 255, 0.3);
+      transition: 0.2s;
+    }
+    
+    .message-avatar img:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(91, 140, 255, 0.6);
+    }
+    
+    /* Bubble transparan dengan efek glassmorphism */
+    .message-content {
+      background: rgba(26, 31, 48, 0.4);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(91, 140, 255, 0.2);
+      border-radius: 18px;
+      padding: 10px 14px;
+      position: relative;
+      word-wrap: break-word;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      transition: 0.2s;
+    }
+    
+    /* Bubble milik sendiri dengan warna berbeda */
+    .message.own .message-content {
+      background: rgba(91, 140, 255, 0.2);
+      backdrop-filter: blur(8px);
+      border-color: rgba(91, 140, 255, 0.4);
+    }
+    
+    /* Nama pengirim */
+    .message-author {
+      font-weight: bold;
+      color: #5b8cff;
+      font-size: 13px;
+      margin-bottom: 4px;
+      display: block;
+    }
+    
+    .message.own .message-author {
+      color: #aaccff;
+      text-align: right;
+    }
+    
+    /* Konten pesan */
+    .message-text {
+      font-size: 15px;
+      line-height: 1.4;
+      color: #fff;
+      margin-bottom: 6px;
+    }
+    
+    /* Waktu di bawah teks (seperti WhatsApp) */
+    .message-time {
+      font-size: 11px;
+      color: rgba(138, 155, 176, 0.8);
+      display: block;
+      text-align: right;
+      margin-top: 2px;
+    }
+    
+    .message.own .message-time {
+      color: rgba(170, 204, 255, 0.8);
+    }
+    
+    /* Reply quote */
+    .message-reply {
+      background: rgba(15, 19, 32, 0.6);
+      backdrop-filter: blur(4px);
+      border-left: 3px solid #5b8cff;
+      padding: 6px 10px;
+      margin-bottom: 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      color: #ccc;
+    }
+    
+    .message-reply strong {
+      color: #5b8cff;
+    }
+    
+    /* Reply indicator */
+    .reply-indicator {
+      background: rgba(15, 19, 32, 0.8);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid rgba(42, 58, 96, 0.3);
+      padding: 12px 20px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    
+    .reply-indicator span {
+      color: #8a9bb0;
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 70%;
+    }
+    
+    .reply-indicator button {
+      background: transparent;
+      border: 1px solid #5b8cff;
+      color: #5b8cff;
+      padding: 6px 16px;
+      border-radius: 30px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: 0.2s;
+    }
+    
+    .reply-indicator button:hover {
+      background: #5b8cff;
+      color: #000;
+    }
+    
+    /* Input area glassmorphism */
+    .input-area {
+      background: rgba(15, 19, 32, 0.8);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid rgba(42, 58, 96, 0.3);
+      padding: 15px 20px;
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    
+    .input-area input {
+      flex: 1;
+      padding: 14px 20px;
+      border-radius: 40px;
+      border: 1px solid rgba(42, 58, 96, 0.5);
+      background: rgba(26, 31, 48, 0.6);
+      backdrop-filter: blur(4px);
+      color: #fff;
+      font-size: 15px;
+      transition: 0.2s;
+    }
+    
+    .input-area input:focus {
+      outline: none;
+      border-color: #5b8cff;
+      box-shadow: 0 0 15px rgba(91, 140, 255, 0.3);
+    }
+    
+    .input-area input::placeholder {
+      color: #8a9bb0;
+      opacity: 0.7;
+    }
+    
+    .input-area button {
+      background: linear-gradient(45deg, #5b8cff, #3a6df0);
+      border: none;
+      color: #000;
+      font-weight: bold;
+      padding: 14px 30px;
+      border-radius: 40px;
+      cursor: pointer;
+      transition: 0.2s;
+      box-shadow: 0 4px 15px rgba(91, 140, 255, 0.3);
+    }
+    
+    .input-area button:hover {
+      transform: scale(1.02);
+      box-shadow: 0 6px 20px rgba(91, 140, 255, 0.5);
+    }
+    
+    /* Footer - lebih tinggi dan jelas */
+    .footer {
+      text-align: center;
+      padding: 12px 20px;
+      border-top: 1px solid #1f2a40;
+      color: #8a9bb0;
+      font-size: 14px;
+      line-height: 1.5;
+      background: rgba(15, 19, 32, 0.8);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    
+    .footer span {
+      color: #00ff88;
+    }
+    
+    /* Scrollbar kustom */
+    .messages-container::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .messages-container::-webkit-scrollbar-track {
+      background: rgba(15, 19, 32, 0.5);
+    }
+    
+    .messages-container::-webkit-scrollbar-thumb {
+      background: #5b8cff;
+      border-radius: 10px;
+    }
+    
+    /* Smooth transitions */
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+  <div class="chat-header">
+    <h2><i class="fas fa-comments"></i> Chat Grup</h2>
+    <a href="/"><i class="fas fa-home"></i> Beranda</a>
+  </div>
+  
+  <div class="messages-container" id="messagesContainer"></div>
+  
+  <div class="reply-indicator" id="replyIndicator">
+    <span id="replyText"></span>
+    <button onclick="cancelReply()"><i class="fas fa-times"></i> Batal</button>
+  </div>
+  
+  <div class="input-area">
+    <input type="text" id="messageInput" placeholder="Tulis pesan...">
+    <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+  </div>
+
+  <script>
+    let currentUser = { id: ${user.id}, name: '${user.name}', photo: '${photoUrl}' };
+    let replyTo = null;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let swipedMessageId = null;
+
+    // Fungsi untuk memaksa fullscreen dan menjaga layout tetap stabil
+    function initFullscreen() {
+      // Coba minta fullscreen saat halaman dimuat
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+      }
+      
+      // Gunakan visualViewport API untuk mendapatkan ukuran sebenarnya
+      if (window.visualViewport) {
+        const setViewportHeight = () => {
+          const vh = window.visualViewport.height * 0.01;
+          document.documentElement.style.setProperty('--vh', \`\${vh}px\`);
+        };
+        
+        window.visualViewport.addEventListener('resize', setViewportHeight);
+        setViewportHeight();
+      }
+    }
+
+    function handleTouchStart(e) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      swipedMessageId = e.currentTarget.dataset.messageId;
+    }
+
+    function handleTouchMove(e) {
+      if (!touchStartX) return;
+      
+      const touchEndX = e.touches[0].clientX;
+      const touchEndY = e.touches[0].clientY;
+      const diffX = touchStartX - touchEndX;
+      const diffY = Math.abs(touchStartY - touchEndY);
+      
+      if (diffX > 50 && diffY < 50) {
+        e.preventDefault();
+        const messageDiv = e.currentTarget;
+        const messageContent = messageDiv.querySelector('.message-text')?.innerText || '';
+        const messageId = messageDiv.dataset.messageId;
+        
+        setReply(messageId, messageContent);
+        
+        touchStartX = 0;
+      }
+    }
+
+    function handleTouchEnd() {
+      touchStartX = 0;
+    }
+
+    async function loadMessages() {
+      try {
+        const res = await fetch('/api/messages');
+        const messages = await res.json();
+        const container = document.getElementById('messagesContainer');
+        container.innerHTML = '';
+        
+        messages.forEach(msg => {
+          const msgDiv = document.createElement('div');
+          msgDiv.className = 'message' + (msg.userId === currentUser.id ? ' own' : '');
+          msgDiv.dataset.messageId = msg.id;
+          
+          msgDiv.addEventListener('touchstart', handleTouchStart, { passive: false });
+          msgDiv.addEventListener('touchmove', handleTouchMove, { passive: false });
+          msgDiv.addEventListener('touchend', handleTouchEnd);
+          
+          const time = new Date(msg.createdAt).toLocaleTimeString('id-ID', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false 
+          });
+          
+          let replyHtml = '';
+          if (msg.parentId && msg.replyContent) {
+            replyHtml = \`<div class="message-reply"><i class="fas fa-reply"></i> <strong>Membalas:</strong> \${msg.replyContent}</div>\`;
+          }
+          
+          msgDiv.innerHTML = \`
+            <div class="message-avatar">
+              <img src="\${msg.userPhoto || 'https://www.gravatar.com/avatar/?d=identicon'}" 
+                   onerror="this.src='https://www.gravatar.com/avatar/?d=identicon'">
+            </div>
+            <div class="message-content">
+              \${replyHtml}
+              <span class="message-author">\${msg.userName}</span>
+              <div class="message-text">\${msg.content}</div>
+              <span class="message-time">\${time}</span>
+            </div>
+          \`;
+          
+          container.appendChild(msgDiv);
+        });
+        
+        container.scrollTop = container.scrollHeight;
+      } catch (err) {
+        console.error('Gagal memuat pesan:', err);
+      }
+    }
+
+    function setReply(id, content) {
+      replyTo = id;
+      document.getElementById('replyIndicator').style.display = 'flex';
+      
+      const displayText = content.length > 50 ? content.substring(0, 50) + '…' : content;
+      document.getElementById('replyText').innerHTML = \`<i class="fas fa-reply"></i> Membalas: \${displayText}\`;
+      
+      document.getElementById('messageInput').focus();
+    }
+
+    function cancelReply() {
+      replyTo = null;
+      document.getElementById('replyIndicator').style.display = 'none';
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const content = input.value.trim();
+      if (!content) return;
+      
+      try {
+        await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, parentId: replyTo })
+        });
+        
+        input.value = '';
+        cancelReply();
+        loadMessages();
+      } catch (err) {
+        alert('Gagal mengirim pesan: ' + err.message);
+      }
+    }
+
+    document.getElementById('messageInput').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    // Inisialisasi fullscreen dan muat pesan
+    initFullscreen();
+    loadMessages();
+    setInterval(loadMessages, 3000);
+  </script>
+</body>
+</html>`;
+  res.send(html);
+});
+
+// ==================== API MESSAGES (DIPERBAIKI) ====================
+app.get('/api/messages', isAuthenticated, async (req, res) => {
+  try {
+    const messages = await getMessages();
+    const users = await getUsers();
+    const enriched = messages.map(m => {
+      const user = users.find(u => u.id === m.userId);
+      let replyContent = null;
+      if (m.parentId) {
+        // Konversi parentId ke number untuk perbandingan yang aman
+        const parent = messages.find(p => p.id === Number(m.parentId));
+        replyContent = parent ? parent.content : '[pesan telah dihapus]';
+      }
+      return {
+        ...m,
+        userName: user ? user.name : 'Unknown',
+        userPhoto: user ? (user.photo || getGravatarUrl(user.email, 40)) : getGravatarUrl('', 40),
+        replyContent
+      };
+    }).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    res.json(enriched);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Gagal memuat pesan' });
+  }
+});
+
+// POST /api/messages
+app.post('/api/messages', isAuthenticated, async (req, res) => {
+  const { content, parentId } = req.body;
+  if (!content || content.trim() === '') {
+    return res.status(400).json({ error: 'Pesan tidak boleh kosong' });
+  }
+  
+  // Konversi parentId ke number jika ada
+  let parentIdNum = null;
+  if (parentId) {
+    parentIdNum = parseInt(parentId, 10);
+    if (isNaN(parentIdNum)) {
+      return res.status(400).json({ error: 'parentId tidak valid' });
+    }
+  }
+  
+  try {
+    const newMessage = await addMessage({
+      userId: req.user.id,
+      content: content.trim(),
+      parentId: parentIdNum
+    });
+    res.json({ success: true, message: newMessage });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Gagal mengirim pesan' });
+  }
+});
+
+// ==================== API KOMENTAR (LAMA) ====================
+app.get('/api/comments', isAuthenticated, async (req, res) => {
+  try {
+    const comments = await getComments();
+    const users = await getUsers();
+    const commentsWithUser = comments.map(c => {
+      const user = users.find(u => u.id === c.userId);
+      return {
+        ...c,
+        name: user ? user.name : 'Unknown',
+        email: user ? user.email : '',
+        photo: user ? user.photo : '',
+        gravatar: user ? (user.photo || getGravatarUrl(user.email, 40)) : getGravatarUrl('', 40)
+      };
+    });
+    res.json(commentsWithUser);
+  } catch (err) {
+    console.error('Gagal memuat komentar:', err);
+    res.status(500).json({ error: 'Gagal memuat komentar' });
+  }
+});
+
+app.post('/api/comments', isAuthenticated, async (req, res) => {
+  const { comment } = req.body;
+  if (!comment || comment.trim() === '') {
+    return res.status(400).json({ error: 'Komentar tidak boleh kosong' });
+  }
+  try {
+    const newComment = await addComment({
+      userId: req.user.id,
+      comment: comment.trim(),
+    });
+    res.json({ success: true, comment: newComment });
+  } catch (err) {
+    console.error('Gagal mengirim komentar:', err);
+    res.status(500).json({ error: 'Gagal mengirim komentar: ' + err.message });
+  }
+});
+
+// ==================== HAPUS AKUN ====================
+app.post('/delete-account', isAuthenticated, async (req, res) => {
+  const { confirm } = req.body;
+  if (confirm !== 'DELETE') {
+    return res.status(400).json({ error: 'Konfirmasi tidak valid' });
+  }
+  try {
+    const users = await getUsers();
+    const filtered = users.filter(u => u.id !== req.user.id);
+    await saveUsers(filtered);
+    req.logout(err => {
+      if (err) console.error(err);
+      res.json({ success: true });
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Gagal menghapus akun' });
+  }
+});
+
+// ==================== ROUTE API ====================
 app.get('/api/status', (req, res) => {
   res.json({ status: 'ok', version: VERSION, developer: DEVELOPER, uptime: process.uptime(), timestamp: Date.now() });
 });
@@ -792,7 +1856,6 @@ app.get('/webzip', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ status: false, error: 'Parameter ?url= wajib diisi.' });
   if (!isValidUrl(url)) return res.status(400).json({ status: false, error: 'URL tidak valid.' });
-
   try {
     const result = await saveWeb2Zip(url, { renameAssets: true });
     if (result.error?.code) return res.status(500).json({ status: false, error: result.error.text || 'Gagal menyimpan website.' });
@@ -807,7 +1870,6 @@ app.get('/tiktok', async (req, res) => {
   const { url } = req.query;
   if (!url || !url.includes('tiktok.com')) return res.status(400).json({ status: false, error: 'URL TikTok tidak valid.' });
   if (!isValidUrl(url)) return res.status(400).json({ status: false, error: 'URL tidak valid.' });
-
   try {
     const data = await fetchTikTok(url);
     if (!data) return res.status(404).json({ status: false, error: 'Video tidak ditemukan.' });
@@ -866,19 +1928,11 @@ app.get('/bratvid', async (req, res) => {
   }
 });
 
-// ==================== HALAMAN UTAMA (WEBSITE LENGKAP) ====================
+// ==================== HALAMAN UTAMA ====================
 app.get('/', (req, res) => {
   const user = req.user;
-  const loginInfo = user 
-    ? `<div style="display:flex; align-items:center; gap:10px;">
-        <img src="${user.photo || getGravatarUrl(user.email)}" style="width:30px; height:30px; border-radius:50%; border:2px solid #5b8cff;">
-        <span>${user.name}</span>
-        <a href="/dashboard" style="color:#5b8cff;">Dashboard</a>
-        <a href="/logout" style="color:#ff3b30;">Logout</a>
-       </div>`
-    : `<a href="/login" style="color:#5b8cff;">Login</a> | <a href="/register" style="color:#5b8cff;">Register</a>`;
+  const gravatar = user ? (user.photo || getGravatarUrl(user.email, 40)) : '';
 
-  // HTML lengkap dari website sebelumnya (hanya ditambahkan loginInfo di header)
   const html = `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -910,7 +1964,13 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; z-index: 100; border-bottom: 1px solid #1f2a40;
 }
-.header-title { font-family: 'Orbitron'; font-size: 20px; color: #5b8cff; letter-spacing: 1px; }
+.header-title {
+  font-family: 'Orbitron'; font-size: 20px; color: #5b8cff; letter-spacing: 1px;
+  text-decoration: none;
+}
+.header-title:hover {
+  text-decoration: underline;
+}
 .menu-btn {
   width: 40px; height: 40px; display: flex; flex-direction: column;
   justify-content: center; align-items: center; gap: 5px; cursor: pointer;
@@ -924,6 +1984,56 @@ body {
 .menu-btn.active span:nth-child(1) { transform: rotate(45deg) translate(6px, 6px); }
 .menu-btn.active span:nth-child(2) { opacity: 0; }
 .menu-btn.active span:nth-child(3) { transform: rotate(-45deg) translate(6px, -6px); }
+
+/* DROPDOWN */
+.user-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.user-dropdown-content {
+  display: none;
+  position: absolute;
+  right: 0;
+  background: #0f1320;
+  border: 1px solid #2a3a60;
+  border-radius: 12px;
+  min-width: 160px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.7);
+  z-index: 101;
+  overflow: hidden;
+}
+.user-dropdown-content a, .user-dropdown-content button {
+  color: #fff;
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.user-dropdown-content a:hover, .user-dropdown-content button:hover {
+  background: #1a1f30;
+  color: #5b8cff;
+}
+.user-dropdown:hover .user-dropdown-content {
+  display: block;
+}
+.user-avatar {
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  border: 2px solid #5b8cff;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.user-avatar:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 15px #5b8cff;
+}
 
 /* STATUS PANEL (SLIDE DOWN) */
 .status-panel {
@@ -1234,43 +2344,24 @@ body {
   font-size: 12px;
   margin-top: 20px;
 }
-/* Tambahan untuk user info di header */
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-}
-.user-info img {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 2px solid #5b8cff;
-}
-.user-info a {
-  color: #5b8cff;
-  text-decoration: none;
-}
-.user-info a:hover {
-  text-decoration: underline;
-}
 </style>
 </head>
 <body>
 <div class="custom-header">
-  <div class="header-title">${SITE_NAME}</div>
+  <a href="/" class="header-title">${SITE_NAME}</a>
   <div style="display: flex; align-items: center; gap: 15px;">
-    <div class="user-info">
-      ${user ? `
-        <img src="${user.photo || getGravatarUrl(user.email)}" alt="profile">
-        <span>${user.name}</span>
-        <a href="/dashboard">Dashboard</a>
-        <a href="/logout" style="color:#ff3b30;">Logout</a>
-      ` : `
-        <a href="/login" style="color:#5b8cff;">Login</a>
-        <a href="/register" style="color:#5b8cff;">Register</a>
-      `}
-    </div>
+    ${user ? `
+      <div class="user-dropdown">
+        <img src="${gravatar}" class="user-avatar" alt="Avatar">
+        <div class="user-dropdown-content">
+          <a href="/profile"><i class="fas fa-user"></i> Profil</a>
+          <a href="/chat"><i class="fas fa-comments"></i> Chat Grup</a>
+          <button onclick="confirmDelete()"><i class="fas fa-trash"></i> Hapus Akun</button>
+        </div>
+      </div>
+    ` : `
+      <a href="/login" style="color:#5b8cff; font-weight:bold;"><i class="fas fa-sign-in-alt"></i> Login</a>
+    `}
     <div class="menu-btn" id="menuBtn">
       <span></span><span></span><span></span>
     </div>
@@ -1426,19 +2517,19 @@ body {
       <div id="bratResponse" class="response-container"></div>
     </div>
 
-<!-- PINTEREST -->
-<div class="api-endpoint">
-  <div class="api-header">
-    <span class="method">GET</span><span class="url">/pinterest?q=</span>
-    <button class="copy-btn" onclick="copyText('${BASE_URL}/pinterest?q=')"><i class="fas fa-copy"></i> pinterest</button>
-  </div>
-  <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
-  <div class="input-group">
-    <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
-    <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
-  </div>
-  <div id="pinterestResponse" class="response-container"></div>
-</div>
+    <!-- PINTEREST -->
+    <div class="api-endpoint">
+      <div class="api-header">
+        <span class="method">GET</span><span class="url">/pinterest?q=</span>
+        <button class="copy-btn" onclick="copyText('${BASE_URL}/pinterest?q=')"><i class="fas fa-copy"></i> pinterest</button>
+      </div>
+      <div class="api-desc">Cari gambar di Pinterest. Parameter ?q= (kata kunci)</div>
+      <div class="input-group">
+        <input type="text" id="pinterestQuery" placeholder="Masukkan kata kunci">
+        <button class="start-btn" onclick="testPinterest()"><i class="fas fa-play"></i> Start</button>
+      </div>
+      <div id="pinterestResponse" class="response-container"></div>
+    </div>
 
     <!-- BRATVID -->
     <div class="api-endpoint">
@@ -1746,6 +2837,28 @@ function copyText(text, label) {
   navigator.clipboard.writeText(text).then(() => alert('Teks disalin!'));
 }
 
+// ==================== HAPUS AKUN ====================
+function confirmDelete() {
+  if (confirm('Apakah Anda yakin ingin menghapus akun? Semua data akan hilang.')) {
+    const code = prompt('Ketik "DELETE" untuk konfirmasi penghapusan akun:');
+    if (code === 'DELETE') {
+      fetch('/delete-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'DELETE' })
+      }).then(res => res.json()).then(data => {
+        if (data.success) {
+          window.location.href = '/';
+        } else {
+          alert('Gagal menghapus akun.');
+        }
+      });
+    } else {
+      alert('Konfirmasi salah.');
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('video').forEach(v=>v.play().catch(()=>{}));
 });
@@ -1765,9 +2878,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ status: false, error: 'Terjadi kesalahan internal server.' });
 });
 
-// ==================== START SERVER ====================
-app.listen(PORT, HOST, () => {
-  console.log(`
+// ==================== START SERVER (ASYNC) ====================
+async function startServer() {
+  await initGithub(); // Ambil token GitHub terlebih dahulu
+  app.listen(PORT, HOST, () => {
+    console.log(`
 \x1b[1m\x1b[34m╔╗ ╦  ╔═\x1b[0m╗╔═╗╔═╗╦═╗╔═╗ \x1b[31m
 \x1b[1m\x1b[34m╠╩╗║  ╠═╣╔═╝\x1b[0m║╣ ╠╦╝╚═╗ \x1b[31m
 \x1b[1m\x1b[34m╚═╝╩═╝╩ ╩╚═╝╚═╝╩\x1b[0m╚═╚═╝ \x1b[31m
@@ -1775,6 +2890,12 @@ app.listen(PORT, HOST, () => {
 \x1b[1m\x1b[32m═══════════════════════════════════════\x1b[0m
 🌐 Server: http://${HOST}:${PORT}
 👤 Developer: ${DEVELOPER}
-✅ Login email tersedia di /login dan /register
-  `);
+✅ Chat grup modern dengan swipe to reply, waktu di bawah teks, bubble transparan, input dinaikkan dengan footer!
+    `);
+  });
+}
+
+startServer().catch(err => {
+  console.error('Gagal memulai server:', err);
+  process.exit(1);
 });
